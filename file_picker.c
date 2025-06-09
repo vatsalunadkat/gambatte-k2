@@ -120,12 +120,12 @@ simple_file_chooser_list(GtkWindow *parent)
     gint       resp;
 
     if (!current_dir)
-        current_dir = g_get_current_dir();
+        current_dir = g_strdup("/mnt/us"); // g_get_current_dir();
 
     selected_path = NULL;
     /* 1) Create the dialog */
     dlg = gtk_dialog_new_with_buttons(
-       "L:A_D:application_ID:filepicker",
+       "L:A_N:application_ID:filepicker",
         parent,
         GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
         GTK_STOCK_CANCEL, GTK_RESPONSE_CANCEL,

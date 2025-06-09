@@ -861,8 +861,8 @@ static void init_gtk_and_window() {
         "  bg[PRELIGHT]    = \"#FFFFFF\"\n" 
         "  fg[PRELIGHT]    = \"#000000\"\n"
         "  xthickness = 0\n"                
-        "  ythickness = 5\n"
-        "  font_name = \"Sans Bold 12\"\n"
+        "  ythickness = 10\n"
+        "  font_name = \"Sans Bold 8\"\n"
         "  GtkWidget::focus-line-width = 0\n"
         "  GtkWidget::focus-padding = 0\n"        
         "  engine \"pixmap\" {}\n"
@@ -900,7 +900,7 @@ static void init_gtk_and_window() {
 
     options_box = gtk_hbox_new(TRUE, 2);
 
-    GtkWidget *open_btn = gtk_button_new_with_label("Open…");
+    GtkWidget *open_btn = gtk_button_new_with_label("Open");
     g_signal_connect(open_btn, "clicked", G_CALLBACK(on_open), NULL);
     gtk_box_pack_start(GTK_BOX(options_box), open_btn, TRUE, TRUE, 0);
 
@@ -933,7 +933,7 @@ static void init_gtk_and_window() {
         gtk_box_pack_start(GTK_BOX(options_box), size_quality_btns[i].btn, TRUE, TRUE, 0);
     }
 
-    gtk_toggle   = gtk_toggle_button_new_with_label("GTK Draw");
+    gtk_toggle   = gtk_toggle_button_new_with_label("GTK");
     fbink_toggle = gtk_toggle_button_new_with_label("FBInk");
 
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(gtk_toggle), TRUE);
@@ -993,16 +993,6 @@ static void init_gtk_and_window() {
 
 // Main function
 int main(int argc, char *argv[]) {
-
-    if (argc < 2) {
-        fprintf(stderr, "Usage: %s <gambatte_libretro.so>\n", argv[0]);
-        return EXIT_FAILURE;
-    }
-    
-    core_path = argv[1];
-
-    // // Load libretro core
-    // if (!init_libretro_core(core_path)) return EXIT_FAILURE;
 
     fbink_cfg.wfm_mode = WFM_A2;
     fbink_cfg.dithering_mode = HWD_PASSTHROUGH;
