@@ -10,7 +10,7 @@ Grab the zip (`gambatte-k2.zip`), unpack on `/mnt/us/extensions` as any other ex
 
 Launch via KUAL and/or copy the shortcut (`shortcut_gambatte-k2.sh`) to `/mnt/us/documents` so it shows on your library.
 
-## Technical Features
+## TL-DR Technical Features
 
 - **Fast, Lightweight UI:**  
   Minimal dependencies (`2.5Mb` binary), runs pretty well on low-RAM e-ink Kindles using around `15Mb` of RAM.
