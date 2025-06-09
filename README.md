@@ -10,6 +10,11 @@ Grab the zip (`gambatte-k2.zip`), unpack on `/mnt/us/extensions` as any other ex
 
 Launch via KUAL and/or copy the shortcut (`shortcut_gambatte-k2.sh`) to `/mnt/us/documents` so it shows on your library.
 
+Open a game/ROM using the "Open" button.
+
+> **Note:**  
+> You must provide your own Game Boy / Game Boy Color ROM files (`.gb`, `.gbc`).  
+
 ## TL-DR Technical Features
 
 - **Fast, Lightweight UI:**  
