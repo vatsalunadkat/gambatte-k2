@@ -129,7 +129,7 @@ simple_file_chooser_list(GtkWindow *parent)
         parent,
         GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
         GTK_STOCK_CANCEL, GTK_RESPONSE_CANCEL,
-//        GTK_STOCK_OK,     GTK_RESPONSE_ACCEPT,
+//      GTK_STOCK_OK,     GTK_RESPONSE_ACCEPT,
         NULL
     );
 

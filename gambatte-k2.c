@@ -889,7 +889,7 @@ static void init_gtk_and_window() {
     int factor_a = screen_width > 6 * 160 ? 6 : screen_width / 160; // 160 is the width of the Gameboy screen
     int center_hbox_heigth = factor_a * 144 + (2 * SCREEN_BORDER);  // 144 is the height of the Gameboy screen
 
-    //center_hbox_heigth = center_hbox_heigth < screen_height / 2 ? center_hbox_heigth : screen_height / 2;
+    // center_hbox_heigth = center_hbox_heigth < screen_height / 2 ? center_hbox_heigth : screen_height / 2;
 
     fprintf(stdout, "on_window_size_allocate: %dx%d --> %d\n", screen_width, screen_height, screen_width - screen_width % 160 );
 
