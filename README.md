@@ -4,6 +4,9 @@
 
 ---
 
+<img src="https://github.com/user-attachments/assets/20ff347f-46dd-47e1-9c17-f4a6515f2a1c" width="300">
+<img src="https://github.com/user-attachments/assets/7524f6a5-aaa0-41dc-9f09-6fdcf3f1dbed" width="300">
+
 ## Usage
 
 Grab the zip (`gambatte-k2.zip`), unpack on `/mnt/us/extensions` as any other extension:
