@@ -2,6 +2,8 @@
 
 **Gambatte-K2** is a Game Boy / Game Boy Color (`.gb`, `.gbc` ROMS) emulator frontend for Kindle e-ink devices, built with performance in mind. It leverages the [gambatte-libretro](https://github.com/libretro/gambatte-libretro) core and provides a GTK2 interface, as well as direct framebuffer rendering mode via [FBInk](https://github.com/NiLuJe/FBInk).
 
+Built for `armel` and `armhf` (tested on 5.14.3 and 5.17.1)
+
 ---
 
 <img src="https://github.com/user-attachments/assets/e50d6b88-ea78-4c06-9aaa-be43c7718224" width="300">
