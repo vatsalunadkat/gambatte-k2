@@ -4,8 +4,8 @@
 
 ---
 
-<img src="https://github.com/user-attachments/assets/20ff347f-46dd-47e1-9c17-f4a6515f2a1c" width="300">
-<img src="https://github.com/user-attachments/assets/7524f6a5-aaa0-41dc-9f09-6fdcf3f1dbed" width="300">
+<img src="https://github.com/user-attachments/assets/e50d6b88-ea78-4c06-9aaa-be43c7718224" width="300">
+<img src="https://github.com/user-attachments/assets/629ac861-22c0-44e1-9aa2-5752399f8dfd" width="300">
 
 ## Usage
 
@@ -21,20 +21,22 @@ Open a game/ROM using the "Open" button.
 ## TL-DR Technical Features
 
 - **Fast, Lightweight UI:**  
-  Minimal dependencies (`2.5Mb` binary), runs pretty well on low-RAM e-ink Kindles using around `15Mb` of RAM.
+  Minimal dependencies (`2.5Mb` binary), runs pretty well on low-RAM e-ink Kindles using around `~15Mb` of RAM and `~50%` CPU.
 - **Two Rendering Modes:**  
   - **GTK2:** Standard X11/GTK2 drawing mode using the OS e-ink refreshing.
   - **FBInk:** Direct framebuffer output for maximum speed, a little quirky, with more ghosting.
 - **Performance-Oriented Design:**  
-  - Only **one main loop** in the frame processing path doing scaling and dithering at once.
-  - **Ordered dithering (BW)** (Bayer 4x4) applied during a first scaling stage for improved frame speed processing.
-  - **Nearest-neighbor scaling** in the second stage for fast upscaling.
+  - ~~Only **one main loop** in the frame processing path doing scaling and dithering at once.~~ ARM NEON implementation.
+  - **Ordered dithering (BW)** (Bayer 16x16) ~~applied during a first scaling stage for improved frame speed processing.~~
+  - **Nearest-neighbor scaling** ~~in the second stage for fast upscaling.~~
   - **Single GdkPixbuf** reused for all frames to minimize RAM usage and allocations.
   - **LUT (Lookup Table):** Precomputed 65536-entry lookup table with RGB565→RGB888→grayscale conversion for fast pixel processing.
 - **Touch & Multi-Touch Controls:**  
   - On-screen virtual Game Boy like buttons with ad-hoc multi-touch support (up to 2 touches) listening directly on the `/dev/input/eventX` device events.
-- **Dynamic Quality/Size Controls:**  
-  - Toggle between some scaling/quality presets.
+  > **Note:**  
+  > as an e-ink device, designed for reading, with just a two-point multi-touch capacitive touch-screen, it may not be extremely responsive at the end.  
+- **~~Dynamic Quality/Size Controls:~~** removed
+  - ~~Toggle between some scaling/quality presets.~~
 - **Threaded Frame Processing:**  
   - Frame conversion and drawing are offloaded to a worker thread to keep the UI responsive.
 - **Minimal External Dependencies:**  
