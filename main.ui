@@ -1,0 +1,137 @@
+<!-- main.ui -->
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+    <requires lib="gtk+" version="2.16" />
+    <object class="GtkWindow" id="main_window">
+        <property name="title">L:A_N:application_ID:gambatte_PC:N_O:URL_DM:PZ</property>
+        <property name="resizable">True</property>
+        <child>
+            <object class="GtkVBox" id="main_vbox">
+                <property name="spacing">5</property>
+                <child>
+                    <object class="GtkHBox" id="options_box">
+                        <property name="homogeneous">True</property>
+                        <property name="spacing">2</property>
+                        <child>
+                            <object class="GtkButton" id="open_btn">
+                                <property name="label">Open</property>
+                                <signal name="clicked" handler="on_open" />
+                            </object>
+                        </child>
+                        <child>
+                            <object class="GtkButton" id="load_btn">
+                                <property name="label">Load</property>
+                            </object>
+                        </child>
+                        <child>
+                            <object class="GtkButton" id="save_btn">
+                                <property name="label">Save</property>
+                            </object>
+                        </child>                        
+                        <child>
+                            <object class="GtkToggleButton" id="gtk_toggle">
+                                <property name="label">GTK</property>
+                                <property name="active">True</property>
+                            </object>
+                        </child>
+                        <child>
+                            <object class="GtkToggleButton" id="fbink_toggle">
+                                <property name="label">FBInk</property>
+                            </object>
+                        </child>
+                        <child>
+                            <object class="GtkButton" id="refresh_button">
+                                <property name="label">Refresh</property>
+                                <signal name="clicked" handler="on_refresh" />
+                            </object>
+                        </child>                        
+                        <child>
+                            <object class="GtkButton" id="quit_button">
+                                <property name="label">Quit</property>
+                                <signal name="clicked" handler="on_quit" />
+                            </object>
+                        </child>
+                    </object>
+                    <packing>
+                        <property name="expand">False</property>
+                        <property name="fill">False</property>
+                        <property name="padding">0</property>
+                    </packing>
+                </child>
+                <child>
+                    <object class="GtkHBox" id="center_hbox">
+                        <child>
+                            <object class="GtkLabel" id="left_spacer" />
+                        </child>
+                        <child>
+                            <object class="GtkVBox" id="center_vbox">
+                                <child>
+                                    <object class="GtkLabel" id="top_spacer" />
+                                </child>
+                                <child>
+                                    <object class="GtkEventBox" id="drawing_area_container">
+                                        <child>
+                                            <object class="GtkHBox" id="center_hbox2">
+                                                <child>
+                                                    <object class="GtkLabel" id="left_spacer2" />
+                                                </child>
+                                                <child>
+                                                    <object class="GtkVBox" id="center2_vbox">
+                                                        <child>
+                                                            <object class="GtkLabel"
+                                                                id="top_spacer2" />
+                                                        </child>
+                                                        <child>
+                                                            <object class="GtkDrawingArea"
+                                                                id="drawing_area" />
+                                                            <packing>
+                                                                <property name="expand">False</property>
+                                                                <property name="fill">False</property>
+                                                            </packing>
+                                                        </child>
+                                                        <child>
+                                                            <object class="GtkLabel"
+                                                                id="bottom_spacer2" />
+                                                        </child>
+                                                    </object>
+                                                    <packing>
+                                                        <property name="expand">False</property>
+                                                        <property name="fill">False</property>
+                                                    </packing>
+                                                </child>
+                                                <child>
+                                                    <object class="GtkLabel" id="right_spacer2" />
+                                                </child>
+                                            </object>
+                                        </child>
+                                    </object>
+                                    <packing>
+                                        <property name="expand">False</property>
+                                        <property name="fill">False</property>
+                                    </packing>
+                                </child>
+                                <child>
+                                    <object class="GtkLabel" id="bottom_spacer" />
+                                </child>
+                            </object>
+                            <packing>
+                                <property name="expand">False</property>
+                                <property name="fill">False</property>
+                            </packing>
+                        </child>
+                        <child>
+                            <object class="GtkLabel" id="right_spacer" />
+                        </child>
+                    </object>
+                    <packing>
+                        <property name="expand">False</property>
+                        <property name="fill">False</property>
+                    </packing>
+                </child>
+                <child>
+                    <object class="GtkDrawingArea" id="joystick_area" />
+                </child>
+            </object>
+        </child>
+    </object>
+</interface>
