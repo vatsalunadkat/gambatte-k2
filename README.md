@@ -2,6 +2,8 @@
 
 **Gambatte-K2** is a Game Boy / Game Boy Color (`.gb`, `.gbc` ROMS) emulator frontend for Kindle e-ink devices, built with performance in mind. It leverages the [gambatte-libretro](https://github.com/libretro/gambatte-libretro) core and provides a GTK2 interface, as well as direct framebuffer rendering mode via [FBInk](https://github.com/NiLuJe/FBInk).
 
+> Audio support is now included! Just pair your headphones with the Kindle.
+
 Built for `armel` and `armhf` (tested on 5.14.3 and 5.17.1)
 
 ---
@@ -20,18 +22,23 @@ Open a game/ROM using the "Open" button.
 > **Note:**  
 > You must provide your own Game Boy / Game Boy Color ROM files (`.gb`, `.gbc`).  
 
+
+> **Known Issues:**
+> - Sometimes `.gb` games freeze on start.
+> - Buttons may get stuck. Just exit the emulator and run again. These issues will be adressed at some point.
+
 ## TL-DR Technical Features
 
 - **Fast, Lightweight UI:**  
-  Minimal dependencies (`2.5Mb` binary), runs pretty well on low-RAM e-ink Kindles using around `~15Mb` of RAM and `~50%` CPU.
+  Minimal dependencies (`3Mb` binary), runs pretty well on low-RAM e-ink Kindles using around ~~`~15Mb` of RAM and `~50%` CPU.~~ **`~3Mb` of RAM and `~20%` CPU.** (on GTK2/XCB mode)
 - **Two Rendering Modes:**  
-  - **GTK2:** Standard X11/GTK2 drawing mode using the OS e-ink refreshing.
+  - **GTK2:** Standard X11/~~GTK2~~/XCB SHM drawing mode using the OS e-ink refreshing.
   - **FBInk:** Direct framebuffer output for maximum speed, a little quirky, with more ghosting.
 - **Performance-Oriented Design:**  
   - ~~Only **one main loop** in the frame processing path doing scaling and dithering at once.~~ ARM NEON implementation.
   - **Ordered dithering (BW)** (Bayer 16x16) ~~applied during a first scaling stage for improved frame speed processing.~~
   - **Nearest-neighbor scaling** ~~in the second stage for fast upscaling.~~
-  - **Single GdkPixbuf** reused for all frames to minimize RAM usage and allocations.
+  - **Single ~~GdkPixbuf~~ 8bit Grayscale Grame** reused for all frames to minimize RAM usage and allocations.
   - **LUT (Lookup Table):** Precomputed 65536-entry lookup table with RGB565→RGB888→grayscale conversion for fast pixel processing.
 - **Touch & Multi-Touch Controls:**  
   - On-screen virtual Game Boy like buttons with ad-hoc multi-touch support (up to 2 touches) listening directly on the `/dev/input/eventX` device events.
@@ -40,9 +47,9 @@ Open a game/ROM using the "Open" button.
 - **~~Dynamic Quality/Size Controls:~~** removed
   - ~~Toggle between some scaling/quality presets.~~
 - **Threaded Frame Processing:**  
-  - Frame conversion and drawing are offloaded to a worker thread to keep the UI responsive.
+  - Frame conversion and drawing are offloaded to a worker thread to keep the UI responsive (on FBInk mode only).
 - **Minimal External Dependencies:**  
-  - Only needs GTK2, GDK-Pixbuf, and FBInk (for direct mode).
+  - Only needs GTK2, ~~GDK-Pixbuf,~~ and FBInk (for direct mode).
 
 ---
 

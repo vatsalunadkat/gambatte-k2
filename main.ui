@@ -40,6 +40,11 @@
                             </object>
                         </child>
                         <child>
+                            <object class="GtkToggleButton" id="style_toggle">
+                                <property name="label">Light</property>
+                            </object>
+                        </child>                        
+                        <child>
                             <object class="GtkButton" id="refresh_button">
                                 <property name="label">Refresh</property>
                                 <signal name="clicked" handler="on_refresh" />

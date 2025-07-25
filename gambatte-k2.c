@@ -14,11 +14,13 @@
 #include <arm_neon.h>
 #include <glib.h>
 #include <gtk/gtk.h>
+#include <gdk/gdkx.h>
 #include <gdk-pixbuf/gdk-pixbuf.h>
 #include "libretro.h"
 #include "fbink.h"
 #include "file_picker.h"
 #include "main_ui.h"
+#include "gray_shm.h"
 
 void retro_init(void), retro_deinit(void);
 bool retro_load_game(const struct retro_game_info *);
@@ -35,7 +37,7 @@ void retro_get_system_av_info(struct retro_system_av_info *);
 static char internal_game_name[17];
 
 // GTK widgets
-static GtkWidget *window, *border_box, *drawing_area, *joystick_area;
+static GtkWidget *window, *border_box, *drawing_area, *drawing_area_container, *joystick_area;
 static GtkWidget *load_btn, *save_btn;
 static GtkWidget *gtk_toggle, *fbink_toggle, *options_box;
 static volatile gint drawing_area_abs_x = 0, drawing_area_abs_y = 0;
@@ -43,16 +45,36 @@ static volatile gint joystick_area_abs_x = 0, joystick_area_abs_y = 0;
 static int PIXBUF_WIDTH = 0, PIXBUF_HEIGHT = 0;
 
 // Framebuffer/FBInk
-int fbfd = FBFD_AUTO, fbfd2 = FBFD_AUTO, fbfd_refresh = FBFD_AUTO;
+int fbfd = FBFD_AUTO, fbfd_refresh = FBFD_AUTO;
 FBInkConfig fbink_cfg = {0}, fbink_cfg_refresh = {0};
 
 // Mutexes
 GMutex *pixbuf_mutex = NULL, *slots_mutex = NULL, *game_loop_mutex = NULL;
+static GAsyncQueue *frame_queue;
+
+// Audio
+typedef struct AudioBackend {
+    void *mixer_handle;
+} AudioBackend;
+static AudioBackend *ab;
+
+int16_t *MixerOpenPlay(int _, int __, int ___, const char *____);
+uint8_t *MixerGetBufPlay(void *_, int *__, int *___);
+void MixerWaitTillAudioProcessed(void *_);
+void MixerDrain(void *_);
+void MixerClose(void *_);
+void MixerReleaseBufPlay(void *_, int __, uint8_t *___);
+int MixerGetNumBytes(void *_);
+
+typedef struct {
+    GrayShm *presenter;
+} MainState;
+static MainState *state;
 
 // Buffers
 static GdkPixbuf *pixbuf = NULL, *pixbuf_dithered = NULL;
 static GdkGC *gc = NULL;
-static guchar *grayscale_frame = NULL;
+static guchar *grayscale_frame_ptr = NULL;
 
 static uint8_t grayscale_lut[65536] = {0};  // for RGB565 -> RGB888 -> grayscale
 static struct retro_game_info game = {0};
@@ -63,6 +85,9 @@ typedef struct { int x, y, w, h, frame_width, frame_height; } DirtyRect;
 typedef enum { DRAW_MODE_GTK, DRAW_MODE_FBINK } DrawMode;
 static DrawMode draw_mode = DRAW_MODE_GTK;
 
+typedef enum { STYLE_MODE_DARK, STYLE_MODE_LIGHT } StyleMode;
+static StyleMode style_mode = STYLE_MODE_DARK;
+static volatile gint refresh_screen = 0;
 ////// JOYSTICK
 typedef enum { GB_BUTTON_ARC, GB_BUTTON_RECT } GbButtonGeometry;
 
@@ -105,6 +130,10 @@ static gboolean ready = FALSE;
 
 static float brightness = 0; // TODO settings on gui
 static float contrast = 1.5;
+
+static double audio_sample_rate = 32000;
+static double video_fps = 60;
+static int   frame_interval_us = 16742;
 
 static int SCALE_FACTOR_A = 3;
 
@@ -178,10 +207,10 @@ const char *detect_touch_device() {
 static gpointer touch_thread_fn(gpointer data) {
 
     struct sched_param param;
-    param.sched_priority = 20;
+    param.sched_priority = 70;
 
     if (pthread_setschedparam(pthread_self(), SCHED_RR, &param) != 0) {
-        perror("pthread_setschedparam");
+        perror("pthread_setschedparam for touch_thread_fn");
     }
 
     const char *touch_path = detect_touch_device();
@@ -322,12 +351,6 @@ static void on_area_configure_event(GtkWidget *widget, GdkEvent *event, gpointer
     }
 }
 
-static size_t audio_sample_batch(const int16_t *data, size_t frames) {
-    return frames; // bypass audio processing
-}
-
-
-
 static gboolean gb_controls_draw(GtkWidget * widget, GdkEventExpose *event, gpointer data) {
     // Draw Gameboy background
     fprintf(stdout, "gb_controls_draw\n");
@@ -338,7 +361,11 @@ static gboolean gb_controls_draw(GtkWidget * widget, GdkEventExpose *event, gpoi
     int height = alloc.height;    
 
     cairo_t *cr = gdk_cairo_create(widget->window);
-    cairo_set_source_rgb(cr, 255, 255, 255); // light gray
+    if (style_mode == STYLE_MODE_LIGHT) {
+        cairo_set_source_rgb(cr, 255, 255, 255);
+    } else {
+        cairo_set_source_rgb(cr,   0,   0,   0);
+    }
     cairo_paint(cr);
 
     // Draw buttons
@@ -355,7 +382,11 @@ static gboolean gb_controls_draw(GtkWidget * widget, GdkEventExpose *event, gpoi
         }
         cairo_fill_preserve(cr);
 
-        cairo_set_source_rgb(cr, 0, 0, 0); // black border
+        if (style_mode == STYLE_MODE_LIGHT) {
+            cairo_set_source_rgb(cr,   0,   0,   0);
+        } else {
+            cairo_set_source_rgb(cr, 255, 255, 255);
+        }
         cairo_set_line_width(cr, 5.0);     // border thickness
         cairo_stroke(cr);
 
@@ -374,108 +405,54 @@ static gboolean gb_controls_draw(GtkWidget * widget, GdkEventExpose *event, gpoi
     return FALSE;
 }
 
-// STEP 4
-static gboolean expose_event(GtkWidget *widget, GdkEventExpose *event, gpointer data) {
-    if (!pixbuf) return FALSE;
-
-    GdkRectangle *rect = &event->area;
-
-    // clock_t t = clock();
-    // double time_taken;
-    g_mutex_lock(pixbuf_mutex);
-    if (!gc) 
-        gc = gdk_gc_new (widget->window);
-
-    gdk_draw_pixbuf(widget->window,
-                    gc,
-                    pixbuf,
-                    rect->x, rect->y, // src_x, src_y
-                    rect->x, rect->y, // dst_x, dst_y 
-                    rect->width, rect->height,
-                    GDK_RGB_DITHER_NONE,
-                    0, 0);
-
-    g_mutex_unlock(pixbuf_mutex);
-    // t = clock() - t;
-    // time_taken = ((double)t) / CLOCKS_PER_SEC;
-    // fprintf(stdout, "expose_event time_taken: %f\n", time_taken);    
-    return FALSE;
-}
-
-// STEP 3
-static gboolean queue_draw_area_v2(gpointer user_data) {
-    DirtyRect *rect = (DirtyRect *)user_data;
-
-    g_mutex_lock(pixbuf_mutex);
-    // gtk draw mode
-    if (draw_mode == DRAW_MODE_GTK) {
-        gtk_widget_queue_draw_area(drawing_area, rect->x, rect->y, rect->w, rect->h);
-    // fbink mode
-    } else if (draw_mode == DRAW_MODE_FBINK) {
-        guchar *pixels = gdk_pixbuf_get_pixels(pixbuf);
-        int width      = gdk_pixbuf_get_width(pixbuf); // TODO remove
-        int height     = gdk_pixbuf_get_height(pixbuf); // TODO remove
-        int rowstride  = gdk_pixbuf_get_rowstride(pixbuf); // TODO remove
-        int ret = fbink_print_raw_data(
-            fbfd,
-            pixels,
-            width,
-            height,
-            rowstride * height,
-            g_atomic_int_get(&drawing_area_abs_x), // x_off
-            g_atomic_int_get(&drawing_area_abs_y), // y_off
-            &fbink_cfg
-        );
-
-        // redrawing the damaged area is glitchy, investigate.
-        // TODO refresh only the damaged section (doing it with fbink_print_raw_data behaves strangely / new fbink version fixed that)
-        // int region_x = rect->x;
-        // int region_y = rect->y;
-        // int region_w = rect->w;
-        // int region_h = rect->h;
-
-        // // Pointer to the start of the region
-        // guchar *region_pixels = pixels + region_y * rowstride + region_x * 3;
-
-        // // Allocate a buffer for the region (fbink expects packed, contiguous data)
-        // size_t region_len = region_w * region_h * 3;
-        // guchar *region_buf = malloc(region_len);
-        // for (int y = 0; y < region_h; ++y) {
-        //     memcpy(region_buf + y * region_w * 3,
-        //         region_pixels + y * rowstride,
-        //         region_w * 3);
-        // }
-
-        // int ret = fbink_print_raw_data(
-        //     fbfd,
-        //     region_buf,
-        //     region_w,
-        //     region_h,
-        //     region_len,
-        //     drawing_area_abs_x + region_x,
-        //     drawing_area_abs_y + region_y,
-        //     &fbink_cfg
-        // );
-        // free(region_buf);        
-
-        if (ret < 0)
-            fprintf(stderr, "fbink_print_raw_data failed: %d\n", ret);
-
-        if (kill_the_ghost) {
-            fprintf(stdout, "refresh screen on queue\n");
-            fbink_refresh(fbfd_refresh, 0, 0, 0, 0, &fbink_cfg_refresh);
-            kill_the_ghost = 0;
-        }
+static AudioBackend *audio_backend_init(const int sample_rate) {
+    AudioBackend *ab = calloc(1, sizeof(AudioBackend));
+    ab->mixer_handle = MixerOpenPlay(sample_rate, 2, 16, "Music");
+    if (!ab->mixer_handle) {
+        fprintf(stderr, "MixerOpenPlay failed\n");
+        free(ab);
+        return NULL;
     }
-    g_mutex_unlock(pixbuf_mutex);
-    
-    free(rect);
-    return FALSE;
+    return ab;
 }
 
+static void audio_backend_deinit(AudioBackend **pab) {
+    if (!pab || !*pab) return;
+    AudioBackend *ab = *pab;
+    if (ab->mixer_handle) {
+        MixerWaitTillAudioProcessed(ab->mixer_handle);
+        MixerDrain(ab->mixer_handle);
+        MixerClose(ab->mixer_handle);
+        ab->mixer_handle = NULL;
+    }
+    free(ab);
+    *pab = NULL;
+}
+
+static size_t audio_sample_batch(const uint8_t *data, size_t frames) {
+    int64_t start = g_get_monotonic_time();  
+    
+    if (!ab || !ab->mixer_handle || MixerGetNumBytes(ab->mixer_handle) > frames * 40 ) return frames;
+
+    int r, s; uint8_t *b = MixerGetBufPlay(ab->mixer_handle, &r, &s);
+    if (!b || r != 0 || s <= 0) return frames;
+    
+    frames = frames > s/4 ? s/4 : frames;
+    
+    memcpy(b + 1, data + 1, frames * 4 - 1);
+    
+    MixerReleaseBufPlay(ab->mixer_handle, frames * 4, b);
+    
+    int64_t elapsed = g_get_monotonic_time() - start;
+    
+    if ( ((double) (elapsed) / 1000.0) > 2 ){
+        g_print("audio slow, elapsed: %f\n", (double) (elapsed) / 1000.0);
+    }
+    return frames;
+}
 
 // STEP 2
-static gpointer process_frame_job_drawing_area_version(gpointer user_data) {
+static gpointer process_frame_job(gpointer user_data) {
     FrameJob *job = user_data;
     
     // DEBUG SECTION START
@@ -496,121 +473,184 @@ static gpointer process_frame_job_drawing_area_version(gpointer user_data) {
     double time_taken;
     // DEBUG SECTION END
 
-    // acquire the frame slot or skip frame
-    if (!g_mutex_trylock(pixbuf_mutex)) {
-        skipped_frame_mutex_count++;
-        free(job->data);
-        free(job);
-        return FALSE;
-    }
-
-    const uint16_t *src       = job->data;   // Pointer to RGB565 data
-    size_t pitch              = job->pitch;  // Pitch of the emulator frame data
-    int emulator_frame_width  = job->width;  // Width of the emulator frame: 160px
-    int emulator_frame_height = job->height; // Height of the emulator frame: 144px
-
-    // int dithered_frame_width  = emulator_frame_width * SCALE_FACTOR_A;
-    // int dithered_frame_height = emulator_frame_height * SCALE_FACTOR_A;
-
-    int pixbuf_frame_width    = emulator_frame_width * SCALE_FACTOR_A;
-    int pixbuf_frame_height   = emulator_frame_height * SCALE_FACTOR_A;    
-
-    int grayscale_rowstride   = pixbuf_frame_width;     // 8 bit per pixel (0-255)     | 1 channel grayscale
-    int pixbuf_rowstride      = pixbuf_frame_width * 3; // 3x8 bit (0-255,0-255,0-255) | 3 channels RGB | gdk_pixbuf_get_rowstride(pixbuf);
-
-    int dirty_count = 0;
-    int min_x = pixbuf_frame_width, min_y = pixbuf_frame_height, max_x = 0, max_y = 0;
-
-    if (!pixbuf || PIXBUF_WIDTH != pixbuf_frame_width || PIXBUF_HEIGHT != pixbuf_frame_height) {
-        fprintf(stderr, "ensure pixbuf size: %d vs %d\n", PIXBUF_WIDTH, pixbuf_frame_width);
-        if (pixbuf) {
-            g_object_unref(pixbuf);
-            free(grayscale_frame);
-        }
-        PIXBUF_WIDTH  = pixbuf_frame_width;  // global
-        PIXBUF_HEIGHT = pixbuf_frame_height; // global
-        // instance pixbuf
-        pixbuf          = gdk_pixbuf_new(GDK_COLORSPACE_RGB, FALSE, 8, pixbuf_frame_width, pixbuf_frame_height);
-        grayscale_frame = malloc(pixbuf_frame_width * pixbuf_frame_height * 1); // 1-channel grayscale buffer
-        //gtk_widget_set_size_request(drawing_area, pixbuf_frame_width, pixbuf_frame_height); // TODO move this out this function
-    }
-
-    guchar *dst = gdk_pixbuf_get_pixels(pixbuf);
-    
-    // 0.001302 sec (including dirty track)
-    // scale frame to the final pixbuf size
-    for (int y = 0; y < emulator_frame_height; y++) {       // 144
-        const uint16_t *src_row = src + y * (pitch / 2);
-        guchar *dst_row = grayscale_frame + (y * SCALE_FACTOR_A) * grayscale_rowstride;
-
-        for (int x = 0; x < emulator_frame_width; x++) {    // 160
-            uint8_t gray = grayscale_lut[src_row[x]];   
-
-            // Check if pixel changed compared to previous grayscale_frame
-            uint8_t prev_gray = dst_row[x * SCALE_FACTOR_A];
-            if (gray != prev_gray) {
-                dirty_count++;
-
-                int scaled_x = x * SCALE_FACTOR_A;
-                int scaled_y = y * SCALE_FACTOR_A;
-
-                if (scaled_x < min_x) min_x = scaled_x;
-                if (scaled_x > max_x) max_x = scaled_x;
-                if (scaled_y < min_y) min_y = scaled_y;
-                if (scaled_y > max_y) max_y = scaled_y;
-            }
-
-            // Horizontal scaling (nearest neighbor)
-            for (int sx = 0; sx < SCALE_FACTOR_A; sx++) {   // 3|6
-                int dst_offset = (x * SCALE_FACTOR_A + sx);
-                dst_row[dst_offset] = gray;
-            }
-        }
-
-        // Vertical scaling (nearest neighbor)
-        for (int sy = 1; sy < SCALE_FACTOR_A; sy++) {       // 4
-            memcpy(dst_row + sy * grayscale_rowstride, dst_row, grayscale_rowstride);
-        }
-    }
-
-    if (!dirty_count) {
-        g_mutex_unlock(pixbuf_mutex);
-        free(job->data);
-        free(job);
+    if (!state->presenter) {
         return NULL;
     }
 
-    for (int y = 0; y < pixbuf_frame_height; y++) { 
-        uint8x16_t t = t_vecs[y & 15]; uint8x16x3_t r;
-        const uint8_t *src_row = grayscale_frame + y * grayscale_rowstride;
-        uint8_t *dst_row       = dst + y * pixbuf_rowstride;
-        for (int x = 0; x < pixbuf_frame_width; x += 16) {
-            r.val[0] = r.val[1] = r.val[2] = vcgeq_u8(vld1q_u8(src_row + x), t);
-            vst3q_u8(dst_row + x * 3, r);
+    const uint16_t *emulator_frame_ptr = job->data;   // Pointer to RGB565 uint16_t data emulator_frame 
+    int emulator_frame_width     = job->width;          // Width of the emulator frame: 160px
+    int emulator_frame_height    = job->height;         // Height of the emulator frame: 144px
+    int emulator_frame_rowstride = job->pitch / sizeof(uint16_t);
+
+    int scaled_frame_width     = emulator_frame_width  * SCALE_FACTOR_A; // refactor, already set
+    int scaled_frame_height    = emulator_frame_height * SCALE_FACTOR_A; // refactor, already set
+    int scaled_frame_channels  = 1;                                      // 8 bit per pixel (0-255) = 1 channel grayscale = Y8
+    int scaled_frame_rowstride = scaled_frame_width * scaled_frame_channels;
+
+    int min_x = scaled_frame_width, min_y = scaled_frame_height, max_x = -1, max_y = -1, dirty_count = 0;
+
+    // TODO refactor, there will be no more size changes.
+    if (!grayscale_frame_ptr || PIXBUF_WIDTH != scaled_frame_width || PIXBUF_HEIGHT != scaled_frame_height) {
+        fprintf(stderr, "ensure pixbuf size: %d vs %d\n", PIXBUF_WIDTH, scaled_frame_width);
+        if (grayscale_frame_ptr) {
+            free(grayscale_frame_ptr);
+        }
+        PIXBUF_WIDTH        = scaled_frame_width;  // global
+        PIXBUF_HEIGHT       = scaled_frame_height; // global
+        grayscale_frame_ptr = malloc(scaled_frame_height * scaled_frame_rowstride); // 1-channel grayscale buffer
+    }
+
+    const uint8_t *dithered_frame_ptr = gray_shm_get_buffer(&state->presenter); // 830Kb
+
+    uint16_t *emu_row_ptr = emulator_frame_ptr;
+    // scale frame to the final pixbuf size
+    for (int y = 0, y_scaled = 0; y < emulator_frame_height; y++, y_scaled += SCALE_FACTOR_A) { // 144
+
+        const uint16_t *emulator_src_row = emulator_frame_ptr + y * emulator_frame_rowstride;
+        uint8_t *grayscale_dst_row = grayscale_frame_ptr + y_scaled * scaled_frame_rowstride;
+
+        int line_min_x = emulator_frame_width, line_max_x = -1;
+
+        for (int x = 0, x_scaled_base = 0; x < emulator_frame_width; x++, x_scaled_base += SCALE_FACTOR_A) { // 160
+            uint8_t gray = grayscale_lut[emulator_src_row[x]];
+            uint8_t prev = grayscale_dst_row[x_scaled_base];                    
+            // Check if pixel changed compared to previous grayscale_frame
+            if (gray == prev) continue;
+            if (x < min_x) min_x = x;
+            if (x > max_x) max_x = x;
+            if (y < min_y) min_y = y;
+            if (y > max_y) max_y = y;
+            if (x < line_min_x) line_min_x = x;
+            if (x > line_max_x) line_max_x = x;
+            memset(&grayscale_dst_row[x_scaled_base], gray, SCALE_FACTOR_A);
+            dirty_count++;
+        }
+
+        if (line_max_x < 0) continue;
+
+        int rx0 = (line_min_x * SCALE_FACTOR_A) & ~0xF;
+        int rx1 = (line_max_x * SCALE_FACTOR_A) + (SCALE_FACTOR_A - 1);
+
+        // Vertical scaling (nearest neighbor)
+        for (int sy = 0; sy < SCALE_FACTOR_A; sy++) {       // (0 is the source)
+            uint8_t *dst_row = grayscale_dst_row + sy * scaled_frame_rowstride;
+            
+            if (sy > 0) {
+                memcpy(dst_row, grayscale_dst_row, scaled_frame_rowstride);
+            }
+
+            uint8x16_t thresh = t_vecs[(y_scaled + sy) & 15];
+
+            uint8_t *dithered_row = dithered_frame_ptr + ((y_scaled + sy) * scaled_frame_rowstride);
+            
+            for (int rx = rx0; rx <= rx1; rx += 16) {
+                vst1q_u8( dithered_row + rx, vcgeq_u8(vld1q_u8(dst_row + rx), thresh) );
+            }  
         }
     }
 
-    g_mutex_unlock(pixbuf_mutex);
+    // 6 (960x864): 190.080 iterations, like 435x435 | 3 480x432: 82.080 iterations, like 286x286
+    // 6 (960x864): 74.880|22.040+51.840
 
-    DirtyRect *rect = malloc(sizeof(DirtyRect));
-    rect->frame_width = pixbuf_frame_width;
-    rect->frame_height = pixbuf_frame_height;
-    rect->x = min_x;
-    rect->y = min_y;
-    rect->w = max_x - min_x + SCALE_FACTOR_A + 1;
-    rect->h = max_y - min_y + SCALE_FACTOR_A + 1;      
-    gdk_threads_add_idle(queue_draw_area_v2, rect);
+    if (!dirty_count && !g_atomic_int_get(&refresh_screen)) {
+        return NULL;
+    }
+
+    min_x = min_x * SCALE_FACTOR_A;
+    max_x = max_x * SCALE_FACTOR_A;
+    min_y = min_y * SCALE_FACTOR_A;
+    max_y = max_y * SCALE_FACTOR_A;
+
+    int rect_x = min_x;
+    int rect_y = min_y;
+    int rect_w = max_x - min_x + SCALE_FACTOR_A;
+    int rect_h = max_y - min_y + SCALE_FACTOR_A;
+
+    
+
+    // use dirt rect
+    // for (int y = rect_y; y < rect_y + rect_h; y++) { 
+    //     uint8x16_t t = t_vecs[y & 15];
+    //     const uint8_t *src_row = grayscale_frame_ptr + y * scaled_frame_rowstride;
+    //     uint8_t *dst_row       = dithered_frame_ptr  + y * scaled_frame_rowstride;
+
+    //     for (int x = rect_x & ~0xF; x < rect_x + rect_w; x += 16) {
+    //         vst1q_u8(dst_row + x, vcgeq_u8(vld1q_u8(src_row + x), t));
+    //     }
+    // }
+    
+    // int w = gray_shm_get_width(&state->presenter);
+    // int h = gray_shm_get_height(&state->presenter);
+
+    if ( g_atomic_int_get(&refresh_screen) > 0 ) {
+        g_atomic_int_add(&refresh_screen, -1);
+        rect_x = 0;
+        rect_y = 0;
+        rect_w = scaled_frame_width;
+        rect_h = scaled_frame_height;          
+    }
+
+    if (draw_mode == DRAW_MODE_GTK) {
+
+        gray_shm_commit_rect(&state->presenter, rect_x, rect_y, rect_w, rect_h);
+        //gray_shm_commit_rect(&state->presenter, 0, 0, w, h);
+
+    } else if (draw_mode == DRAW_MODE_FBINK) {
+
+        // int ret = fbink_print_raw_data(
+        //     fbfd,
+        //     frame,
+        //     scaled_frame_width,
+        //     scaled_frame_height,
+        //     scaled_frame_width * scaled_frame_height,
+        //     g_atomic_int_get(&drawing_area_abs_x), // x_off
+        //     g_atomic_int_get(&drawing_area_abs_y), // y_off
+        //     &fbink_cfg
+        // );
+
+        // Pointer to the start of the region
+        const uint8_t *region_pixels = dithered_frame_ptr + (rect_y * scaled_frame_rowstride) + (rect_x * scaled_frame_channels);
+
+        // Allocate a buffer for the region (fbink expects packed, contiguous data)
+        const size_t region_len = rect_w * rect_h * scaled_frame_channels;
+
+        const uint8_t *region_buf = malloc(region_len);
+
+        for (int y = 0; y < rect_h; ++y) {
+            memcpy(region_buf + y * rect_w * scaled_frame_channels,
+                region_pixels + y * scaled_frame_rowstride,
+                                    rect_w * scaled_frame_channels);
+        }
+
+        int ret = fbink_print_raw_data(
+            fbfd,
+            region_buf,
+            rect_w,
+            rect_h,
+            region_len,
+            g_atomic_int_get(&drawing_area_abs_x) + rect_x,
+            g_atomic_int_get(&drawing_area_abs_y) + rect_y,
+            &fbink_cfg
+        );
+
+        free(region_buf);    
+        
+        if (ret < 0) {
+            fprintf(stderr, "fbink_print_raw_data failed: %d\n", ret);
+        }        
+
+    }
 
     // DEBUG SECTION START
     t = clock() - t; 
     time_taken = ((double)t) / CLOCKS_PER_SEC; // in seconds 
     frame_count++;
     if (now > last_time) { // Print FPS every 5 seconds
-        fprintf(stdout,"refresh FPS: %2d skipped: %2d ( fps: %2d / mutex: %2d)ttaken: %.4f dirty: %5d min_x:%3d min_y:%3d w:%3d h:%3d | w:%3d h:%3d pitch:%3d\n",
-            frame_count, skipped_frame_fps_count + skipped_frame_mutex_count,
-            skipped_frame_fps_count, skipped_frame_mutex_count, time_taken, dirty_count,
-            min_x, min_y, dirty_count ? max_x - min_x : 0, dirty_count ? max_y - min_y : 0,
-            pixbuf_frame_width, pixbuf_frame_height, pitch);
+        fprintf(stdout,"refresh FPS: %2d ttaken: %.4f dirty: %5d min_x: %3d min_y: %3d max_x: %3d max_y: %3d rect_x: %3d rect_y: %3d rect_w: %3d rect_h: %3d | w:%3d h:%3d\n",
+            frame_count, time_taken, dirty_count,
+            min_x, min_y, max_x, max_y,
+            rect_x, rect_y, rect_w, rect_h,
+            scaled_frame_width, scaled_frame_height);
 
         frame_count = skipped_frame_fps_count = skipped_frame_mutex_count = 0;
         last_time = now;
@@ -618,29 +658,78 @@ static gpointer process_frame_job_drawing_area_version(gpointer user_data) {
     // DEBUG SECTION END    
     clock_gettime(CLOCK_MONOTONIC, &last_frame_time);
 
-    free(job->data);
-    free(job);
     return NULL;
 }
 
-// 1 STEP
+static gboolean should_process_frame(void) {
+    static int64_t last_frame_time = 0;
+    const int FRAME_INTERVAL_US = 1000000 / 30; // 
+    int64_t current_time = g_get_monotonic_time();
+
+    if ((current_time - last_frame_time) > FRAME_INTERVAL_US) {
+        last_frame_time = current_time;
+        return TRUE;
+    }
+    return FALSE;
+}
+
+// frame thread
+static gpointer frame_thread_loop(gpointer data){
+
+    struct sched_param param;
+    param.sched_priority = 70;
+
+    if (pthread_setschedparam(pthread_self(), SCHED_RR, &param) != 0) {
+        perror("pthread_setschedparam for frame_thread_loop");
+    }
+
+    while (running) { 
+        FrameJob *job = g_async_queue_pop(frame_queue);
+        // check sentinel here
+        if (job) {
+            if (should_process_frame()) {
+                process_frame_job(job);
+            }
+            free(job->data);
+            free(job);
+        }
+    }
+   
+    return NULL;
+}
+
+// emulator thread
 static void video_refresh(const void *data, unsigned width, unsigned height, size_t pitch) {
     if (!data) return;
 
-    // Allocate a buffer for the frame
-    size_t frame_size = height * pitch;
-    uint16_t *frame_copy = malloc(frame_size);
-    if (!frame_copy) return;
-    memcpy(frame_copy, data, frame_size);
-
     FrameJob *job = malloc(sizeof(FrameJob));
-    job->data = frame_copy;
-    job->width = width;
-    job->height = height;
-    job->pitch = pitch;
 
-    // schedule frame precessing and exit asap to prevent core slow down
-    g_thread_create(process_frame_job_drawing_area_version, job, FALSE, NULL);
+    job->width  = width;
+    job->height = height;
+    job->pitch  = pitch;
+
+    if (draw_mode == DRAW_MODE_GTK) {
+        if (should_process_frame()){
+            job->data = data;
+            process_frame_job(job);
+            free(job);
+        }
+        return;
+    }
+
+    uint16_t *frame_copy = malloc(height * pitch);
+    memcpy(frame_copy, data, height * pitch);
+    job->data = frame_copy;
+
+    // queue frame precessing and exit asap to prevent core slow down
+    // drop any old frame waiting in the queue and push the newest frame atomically
+    g_async_queue_lock(frame_queue);
+    FrameJob *old = g_async_queue_try_pop_unlocked(frame_queue);
+    if (old) {
+        free(old->data); free(old);
+    }
+    g_async_queue_push_unlocked(frame_queue, job);
+    g_async_queue_unlock(frame_queue);
 
 }
 
@@ -706,14 +795,36 @@ static bool environment_cb(unsigned cmd, void *data) {
 
 static gpointer emulator_thread_fn(gpointer data) {
 
-    while (running) { // TODO use mutexes to stop gracefully
+    // const int frame_interval_us = 16742; // FRAME_USEC;
+    struct sched_param param;
+    param.sched_priority = 70;
+
+    if (pthread_setschedparam(pthread_self(), SCHED_RR, &param) != 0) {
+        perror("pthread_setschedparam for emulator_thread_fn");
+    }
+
+    while (running) {
+
+        int64_t start = g_get_monotonic_time();
+
         g_mutex_lock(game_loop_mutex);
         if (ready) {
             retro_run(); // will trigger video_refresh via callback
         }
         g_mutex_unlock(game_loop_mutex);
-        g_usleep(16666); // 60 FPS
-        //
+
+        int64_t elapsed = g_get_monotonic_time() - start;
+
+        if (elapsed < frame_interval_us) {                  
+            g_usleep(frame_interval_us - elapsed);
+        } else {
+            g_print("warning negative elapsed: %f\n", (double) (elapsed) / 1000.0);
+        }
+
+        // if ( ((double) (elapsed) / 1000.0) > 4 ){
+        //     g_print("retro run slow, elapsed: %f\n", (double) (elapsed) / 1000.0);
+        // }
+
     }
     return NULL;
 }
@@ -735,6 +846,7 @@ void on_open(GtkButton *button, gpointer user_data) {
                 retro_unload_game();
                 retro_reset();
                 retro_deinit();
+                audio_backend_deinit(&ab);
             }
 
             retro_set_environment(environment_cb);
@@ -768,6 +880,19 @@ void on_open(GtkButton *button, gpointer user_data) {
                 g_mutex_unlock(game_loop_mutex);
                 return;
             }
+
+            struct retro_system_av_info av_info;
+            retro_get_system_av_info(&av_info);
+
+            audio_sample_rate = av_info.timing.sample_rate;
+            video_fps         = av_info.timing.fps;
+            frame_interval_us = (int) (1000000.0 / video_fps);
+
+            ab = audio_backend_init( 32760 );
+
+            g_print("Libretro core reports sample rate: %.2f Hz sample_rate:: %f fusec: %d \n", video_fps, audio_sample_rate, frame_interval_us );
+
+            g_atomic_int_set(&refresh_screen, 10);
 
             // libretro.cpp:2589
             char raw_name[17];
@@ -937,11 +1062,16 @@ void on_refresh(GtkButton *button, gpointer user_data) {
     fbink_refresh(fbfd_refresh, drawing_area_abs_y, drawing_area_abs_x, PIXBUF_WIDTH, PIXBUF_HEIGHT, &fbink_cfg_refresh);
     g_mutex_unlock(game_loop_mutex);
     g_mutex_unlock(pixbuf_mutex);
+    g_atomic_int_set(&refresh_screen, 30);
 }
 
 // GTK button callback to quit
 void on_quit(GtkButton *button, gpointer user_data) {
     running = FALSE; // Signal the thread to stop
+    if (state->presenter) {
+        gray_shm_destroy(state->presenter);
+        state->presenter = NULL;
+    }    
     gtk_main_quit();
 }
 
@@ -960,6 +1090,45 @@ void on_draw_mode_toggle(GtkToggleButton *button, gpointer user_data) {
     kill_the_ghost = 1;
     g_mutex_unlock(pixbuf_mutex); 
 
+}
+
+void on_toggle_style(GtkToggleButton *toggle, gpointer window) {
+
+    GdkColor white_color, black_color;
+    gdk_color_parse("#FFFFFF", &white_color);
+    gdk_color_parse("#000000", &black_color);
+
+    style_mode = gtk_toggle_button_get_active(toggle) ? STYLE_MODE_LIGHT : STYLE_MODE_DARK;
+
+    gtk_widget_modify_bg(window, GTK_STATE_NORMAL,                 style_mode == STYLE_MODE_DARK ? &black_color : &white_color);
+    gtk_widget_modify_bg(drawing_area, GTK_STATE_NORMAL,           style_mode == STYLE_MODE_DARK ? &black_color : &white_color);
+    gtk_widget_modify_bg(drawing_area_container, GTK_STATE_NORMAL, style_mode == STYLE_MODE_DARK ? &white_color : &black_color);
+
+    gtk_widget_queue_draw(GTK_WIDGET(window));
+    g_atomic_int_set(&refresh_screen, 30);
+}
+
+static void on_area_realize(GtkWidget *widget, MainState *st)
+{
+    xcb_window_t xid = GDK_WINDOW_XID(widget->window);
+    int w = widget->allocation.width, h = widget->allocation.height;
+    st->presenter = gray_shm_create(xid, w, h);
+
+    GdkWindow *gdk_win = gtk_widget_get_window(widget);
+    int abs_x = 0, abs_y = 0;
+    if (gdk_win)
+        gdk_window_get_origin(gdk_win, &abs_x, &abs_y);
+
+    g_print("on_area_realize xid: %d w: %d h: %d abs_x: %d abs_y: %d \n", xid, gray_shm_get_width(st->presenter), gray_shm_get_height(st->presenter), abs_x, abs_y);
+}
+
+static void on_area_size_allocate(GtkWidget *widget, GtkAllocation *allocation, MainState *st)
+{
+    if (st->presenter) {
+        gray_shm_resize(st->presenter, allocation->width, allocation->height);
+    }
+
+    g_print("on_area_size_allocate w: %d h: %d\n", allocation->width, allocation->height);
 }
 
 static void init_gtk_and_window() {
@@ -1019,11 +1188,12 @@ static void init_gtk_and_window() {
     save_btn       = GTK_WIDGET(gtk_builder_get_object(builder, "save_btn"));
 
     GtkWidget *center_hbox            = GTK_WIDGET(gtk_builder_get_object(builder, "center_hbox"));
-    GtkWidget *drawing_area_container = GTK_WIDGET(gtk_builder_get_object(builder, "drawing_area_container"));
+    drawing_area_container = GTK_WIDGET(gtk_builder_get_object(builder, "drawing_area_container"));
+    GtkWidget *style_toggle   = GTK_WIDGET(gtk_builder_get_object(builder, "style_toggle"));
 
     // Set up signals not handled by Glade
     g_signal_connect(window, "destroy", G_CALLBACK(gtk_main_quit), NULL);
-    g_signal_connect(drawing_area, "expose-event", G_CALLBACK(expose_event), NULL);
+    // g_signal_connect(drawing_area, "expose-event", G_CALLBACK(expose_event), NULL);
     g_signal_connect(drawing_area, "configure-event", G_CALLBACK(on_area_configure_event), NULL);
     g_signal_connect(joystick_area, "expose-event", G_CALLBACK(gb_controls_draw), NULL);
     g_signal_connect(joystick_area, "configure-event", G_CALLBACK(on_area_configure_event), NULL);
@@ -1033,6 +1203,14 @@ static void init_gtk_and_window() {
     g_signal_connect(load_btn, "clicked", G_CALLBACK(on_state_mode_click), GINT_TO_POINTER(STATE_MODE_LOAD));
     g_signal_connect(save_btn, "clicked", G_CALLBACK(on_state_mode_click), GINT_TO_POINTER(STATE_MODE_SAVE));
 
+    g_signal_connect(style_toggle, "toggled", G_CALLBACK(on_toggle_style), window);
+    g_signal_connect(drawing_area, "realize",       G_CALLBACK(on_area_realize),       &state);
+    g_signal_connect(drawing_area, "size-allocate", G_CALLBACK(on_area_size_allocate) ,&state);
+    //g_signal_connect(window,       "destroy",       G_CALLBACK(on_area_destroy),       &state);
+    gtk_widget_set_name(window,                 "window");
+    gtk_widget_set_name(drawing_area,           "drawing_area");
+    gtk_widget_set_name(drawing_area_container, "drawing_area_container");
+    gtk_widget_set_name(joystick_area,          "joystick_area");
 
     GdkScreen *screen = gdk_screen_get_default();
     int screen_width  = gdk_screen_get_width(screen);
@@ -1042,9 +1220,9 @@ static void init_gtk_and_window() {
     GdkColor white_color, black_color;
     gdk_color_parse("#FFFFFF", &white_color);
     gdk_color_parse("#000000", &black_color);
-    gtk_widget_modify_bg(window, GTK_STATE_NORMAL, &white_color);
-    gtk_widget_modify_bg(drawing_area, GTK_STATE_NORMAL, &white_color);
-    gtk_widget_modify_bg(drawing_area_container, GTK_STATE_NORMAL, &black_color);
+    gtk_widget_modify_bg(window, GTK_STATE_NORMAL,                 style_mode == STYLE_MODE_DARK ? &black_color : &white_color);
+    gtk_widget_modify_bg(drawing_area, GTK_STATE_NORMAL,           style_mode == STYLE_MODE_DARK ? &black_color : &white_color);
+    gtk_widget_modify_bg(drawing_area_container, GTK_STATE_NORMAL, style_mode == STYLE_MODE_DARK ? &white_color : &black_color);
 
     SCALE_FACTOR_A = screen_width < 6 * 160 ? 3 : 6;                     // 160 is the width of the Gameboy screen
     int center_hbox_heigth = SCALE_FACTOR_A * 144 + (2 * SCREEN_BORDER); // 144 is the height of the Gameboy screen
@@ -1092,6 +1270,9 @@ int main(int argc, char *argv[]) {
     slots_mutex     = g_mutex_new();
     game_loop_mutex = g_mutex_new();
 
+    // queues
+    frame_queue     = g_async_queue_new();
+
     // gtk
     gtk_init(&argc, &argv);
 
@@ -1100,12 +1281,15 @@ int main(int argc, char *argv[]) {
     // Start game loop
     GThread *emulator_thread = g_thread_create(emulator_thread_fn, NULL, FALSE, NULL);
     GThread *touch_thread    = g_thread_create(touch_thread_fn, NULL, FALSE, NULL);    
+    GThread *frame_thread    = g_thread_create(frame_thread_loop, NULL, FALSE, NULL);    
 
     gtk_widget_show_all(window);
     gdk_threads_enter();
 
     gtk_main();
     gdk_threads_leave();
+
+    audio_backend_deinit(&ab);
     
     // Cleanup
     if (game.data) {
@@ -1114,7 +1298,7 @@ int main(int argc, char *argv[]) {
     }
 
     if (pixbuf) g_object_unref(pixbuf);
-    if (grayscale_frame) free(grayscale_frame);
+    if (grayscale_frame_ptr) free(grayscale_frame_ptr);
     g_mutex_free(pixbuf_mutex);
     
     return EXIT_SUCCESS;
