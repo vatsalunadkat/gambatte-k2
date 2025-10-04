@@ -131,12 +131,6 @@ static gboolean ready = FALSE;
 static float brightness = 0; // TODO settings on gui
 static float contrast = 1.5;
 
-// Turbo mode globals
-static double speed_multiplier = 1.0;
-static int select_press_count = 0;
-static int64_t last_select_press_time = 0;
-static const int64_t SELECT_PRESS_WINDOW_US = 3000000; // 3 seconds window
-
 static double audio_sample_rate = 32000;
 static double video_fps = 60;
 static int   frame_interval_us = 16742;
@@ -303,27 +297,6 @@ static void input_poll(void){
             }
         }
     }
-
-    // Detect triple SELECT press for turbo toggle
-    int64_t now = g_get_monotonic_time();
-    static int prev_select_state = 0;
-
-    if (gb_button_state[GB_SELECT] && !prev_select_state) {
-        // SELECT pressed
-        if (now - last_select_press_time < SELECT_PRESS_WINDOW_US) {
-            select_press_count++;
-        } else {
-            select_press_count = 1;
-        }
-        last_select_press_time = now;
-
-        if (select_press_count >= 3) {
-            speed_multiplier = (speed_multiplier == 1.0) ? 10.0 : 1.0;
-            fprintf(stdout, "--- Turbo Mode: %gx\n", speed_multiplier);
-            select_press_count = 0;
-        }
-    }
-    prev_select_state = gb_button_state[GB_SELECT];
 }
 
 // input state | gambatte thread
@@ -460,11 +433,6 @@ static size_t audio_sample_batch(const uint8_t *data, size_t frames) {
     int64_t start = g_get_monotonic_time();  
     
     if (!ab || !ab->mixer_handle || MixerGetNumBytes(ab->mixer_handle) > frames * 40 ) return frames;
-
-    // Mute audio when turbo mode active
-    if (speed_multiplier > 1.0) {
-        return frames;
-    }
 
     int r, s; uint8_t *b = MixerGetBufPlay(ab->mixer_handle, &r, &s);
     if (!b || r != 0 || s <= 0) return frames;
@@ -851,13 +819,6 @@ static gpointer emulator_thread_fn(gpointer data) {
             g_usleep(frame_interval_us - elapsed);
         } else {
             g_print("warning negative elapsed: %f\n", (double) (elapsed) / 1000.0);
-        }
-
-        int64_t target_interval = frame_interval_us / speed_multiplier;
-        if (elapsed < target_interval) {
-            g_usleep(target_interval - elapsed);
-        } else if (elapsed < 0) {
-            g_print("warning negative elapsed: %f\n", (double)(elapsed) / 1000.0);
         }
 
         // if ( ((double) (elapsed) / 1000.0) > 4 ){
