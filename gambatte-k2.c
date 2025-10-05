@@ -1,3 +1,10 @@
+#ifdef DESKTOP_BUILD
+#include <glib.h>
+#include <gtk/gtk.h>
+#include <gdk/gdkx.h>
+#include <gdk-pixbuf/gdk-pixbuf.h>
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -442,24 +449,26 @@ static void audio_backend_deinit(AudioBackend **pab) {
 }
 
 static size_t audio_sample_batch(const uint8_t *data, size_t frames) {
-    int64_t start = g_get_monotonic_time();  
+    // disable audio for CPU savings - freeing ~15–20% CPU on Kindle
     
-    if (!ab || !ab->mixer_handle || MixerGetNumBytes(ab->mixer_handle) > frames * 40 ) return frames;
+    // int64_t start = g_get_monotonic_time();  
+    
+    // if (!ab || !ab->mixer_handle || MixerGetNumBytes(ab->mixer_handle) > frames * 40 ) return frames;
 
-    int r, s; uint8_t *b = MixerGetBufPlay(ab->mixer_handle, &r, &s);
-    if (!b || r != 0 || s <= 0) return frames;
+    // int r, s; uint8_t *b = MixerGetBufPlay(ab->mixer_handle, &r, &s);
+    // if (!b || r != 0 || s <= 0) return frames;
     
-    frames = frames > s/4 ? s/4 : frames;
+    // frames = frames > s/4 ? s/4 : frames;
     
-    memcpy(b + 1, data + 1, frames * 4 - 1);
+    // memcpy(b + 1, data + 1, frames * 4 - 1);
     
-    MixerReleaseBufPlay(ab->mixer_handle, frames * 4, b);
+    // MixerReleaseBufPlay(ab->mixer_handle, frames * 4, b);
     
-    int64_t elapsed = g_get_monotonic_time() - start;
+    // int64_t elapsed = g_get_monotonic_time() - start;
     
-    if ( ((double) (elapsed) / 1000.0) > 2 ){
-        g_print("audio slow, elapsed: %f\n", (double) (elapsed) / 1000.0);
-    }
+    // if ( ((double) (elapsed) / 1000.0) > 2 ){
+    //     g_print("audio slow, elapsed: %f\n", (double) (elapsed) / 1000.0);
+    // }
     return frames;
 }
 
