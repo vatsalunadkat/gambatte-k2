@@ -478,6 +478,13 @@ static gpointer process_frame_job(gpointer user_data) {
     }
 
     const uint16_t *emulator_frame_ptr = job->data;   // Pointer to RGB565 uint16_t data emulator_frame 
+
+    // NEW Direct grayscale rendering optimization
+    for (int i = 0; i < job->width * job->height; i++) {
+        uint8_t gray = grayscale_lut[emulator_frame_ptr[i]];
+        emulator_frame_ptr[i] = (gray << 8) | gray; // store gray in 16-bit for uniform processing
+    }
+
     int emulator_frame_width     = job->width;          // Width of the emulator frame: 160px
     int emulator_frame_height    = job->height;         // Height of the emulator frame: 144px
     int emulator_frame_rowstride = job->pitch / sizeof(uint16_t);
