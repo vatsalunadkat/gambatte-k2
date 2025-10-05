@@ -267,13 +267,20 @@ static gpointer touch_thread_fn(gpointer data) {
 // input callbacks | gambatte thread
 static void input_poll(void){
     // fprintf(stdout, "input_poll\n");
-    // Clear all buttons
-    for (int i = 0; i < GB_BUTTON_COUNT; ++i)
-        gb_button_state[i] = 0;
+
+    // Clear only non-joystick buttons immediately
+    // Joystick buttons (UP, DOWN, LEFT, RIGHT) will retain previous state until next touch
+    gb_button_state[GB_A] = 0;
+    gb_button_state[GB_B] = 0;
+    gb_button_state[GB_SELECT] = 0;
+    gb_button_state[GB_START] = 0;
+
+    // Preserve previous joystick state (so that holding a direction still registers)
+    static int prev_joystick_state[4] = {0};
+    memcpy(&gb_button_state[GB_UP], prev_joystick_state, sizeof(prev_joystick_state));
 
     // Snapshot touch slots
     TouchSlot slots[MAX_TOUCHES];
-
     g_mutex_lock(slots_mutex);
     memcpy(slots, slots_snap, sizeof(slots));
     g_mutex_unlock(slots_mutex);
@@ -289,7 +296,7 @@ static void input_poll(void){
         for (int i = 0; i < GB_BUTTON_COUNT; ++i) {
             int x = g_atomic_int_get(&gb_button_regions[i].x); // cx
             int y = g_atomic_int_get(&gb_button_regions[i].y); // cy
-            int r = g_atomic_int_get(&gb_button_regions[i].r);  
+            int r = g_atomic_int_get(&gb_button_regions[i].r);
 
             int dx = rel_x - x;
             int dy = rel_y - y;
@@ -299,6 +306,9 @@ static void input_poll(void){
             }
         }
     }
+
+    // Save current joystick state for next frame
+    memcpy(prev_joystick_state, &gb_button_state[GB_UP], sizeof(prev_joystick_state));
 }
 
 // input state | gambatte thread
