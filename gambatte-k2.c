@@ -127,6 +127,8 @@ typedef struct {
 enum { STATE_MODE_LOAD, STATE_MODE_SAVE };
 static gboolean running = TRUE;
 static gboolean ready = FALSE;
+static gboolean frame_skip_enabled = TRUE;
+static int frame_counter = 0;
 
 static float brightness = 0; // TODO settings on gui
 static float contrast = 1.5;
@@ -670,9 +672,16 @@ static gpointer process_frame_job(gpointer user_data) {
 
 static gboolean should_process_frame(void) {
     static int64_t last_frame_time = 0;
-    const int FRAME_INTERVAL_US = 1000000 / 30; // 
     int64_t current_time = g_get_monotonic_time();
 
+    if (frame_skip_enabled) {
+        frame_counter++;
+        if (frame_counter % 2 != 0)
+            return FALSE; // Skip every other frame
+    }
+
+    // const int FRAME_INTERVAL_US = 1000000 / 30; // 15 fps
+    const int FRAME_INTERVAL_US = 1000000 / 60; // match Game Boy timing - 30 fps after frame skip
     if ((current_time - last_frame_time) > FRAME_INTERVAL_US) {
         last_frame_time = current_time;
         return TRUE;
