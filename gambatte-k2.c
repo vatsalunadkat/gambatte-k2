@@ -1303,7 +1303,9 @@ int main(int argc, char *argv[]) {
     fbink_init(fbfd_refresh, &fbink_cfg_refresh);
 
     // threading
+    #if !GLIB_CHECK_VERSION(2,32,0)
     g_thread_init(NULL);
+    #endif
     gdk_threads_init();
 
     // mutexes
