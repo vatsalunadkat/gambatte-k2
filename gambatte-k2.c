@@ -5,6 +5,11 @@
 #include <gdk-pixbuf/gdk-pixbuf.h>
 #endif
 
+#include <math.h>
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -498,7 +503,7 @@ static gpointer process_frame_job(gpointer user_data) {
         return NULL;
     }
 
-    const uint16_t *emulator_frame_ptr = job->data;   // Pointer to RGB565 uint16_t data emulator_frame 
+    uint16_t *emulator_frame_ptr = (uint16_t *)job->data;   // Pointer to RGB565 uint16_t data emulator_frame 
 
     // NEW Direct grayscale rendering optimization
     for (int i = 0; i < job->width * job->height; i++) {
@@ -528,7 +533,7 @@ static gpointer process_frame_job(gpointer user_data) {
         grayscale_frame_ptr = malloc(scaled_frame_height * scaled_frame_rowstride); // 1-channel grayscale buffer
     }
 
-    const uint8_t *dithered_frame_ptr = gray_shm_get_buffer(&state->presenter); // 830Kb
+    const uint8_t *dithered_frame_ptr = gray_shm_get_buffer(state->presenter); // 830Kb
 
     uint16_t *emu_row_ptr = emulator_frame_ptr;
     // scale frame to the final pixbuf size
@@ -620,7 +625,7 @@ static gpointer process_frame_job(gpointer user_data) {
 
     if (draw_mode == DRAW_MODE_GTK) {
 
-        gray_shm_commit_rect(&state->presenter, rect_x, rect_y, rect_w, rect_h);
+        gray_shm_commit_rect(state->presenter, rect_x, rect_y, rect_w, rect_h);
         //gray_shm_commit_rect(&state->presenter, 0, 0, w, h);
 
     } else if (draw_mode == DRAW_MODE_FBINK) {
