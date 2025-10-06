@@ -26,7 +26,7 @@
 #include "libretro.h"
 #include "fbink.h"
 #include "file_picker.h"
-#include "main_ui.h"
+// #include "main_ui.h"
 #include "gray_shm.h"
 
 void retro_init(void), retro_deinit(void);
@@ -1202,8 +1202,9 @@ static void init_gtk_and_window() {
     GtkBuilder *builder = gtk_builder_new();
     GError *error = NULL;
 
-    // Load UI from the xxd-generated header
-    if (!gtk_builder_add_from_string(builder, (const gchar *)main_ui, main_ui_len, &error)) {
+    // Load UI directly from the main.ui file
+    builder = gtk_builder_new();
+    if (!gtk_builder_add_from_file(builder, "main.ui", &error)) {
         g_error("Failed to load UI: %s", error->message);
         g_error_free(error);
         return;
