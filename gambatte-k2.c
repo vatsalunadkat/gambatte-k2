@@ -1,15 +1,3 @@
-#ifdef DESKTOP_BUILD
-#include <glib.h>
-#include <gtk/gtk.h>
-#include <gdk/gdkx.h>
-#include <gdk-pixbuf/gdk-pixbuf.h>
-#endif
-
-#include <math.h>
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -31,7 +19,7 @@
 #include "libretro.h"
 #include "fbink.h"
 #include "file_picker.h"
-// #include "main_ui.h"
+#include "main_ui.h"
 #include "gray_shm.h"
 
 void retro_init(void), retro_deinit(void);
@@ -139,8 +127,6 @@ typedef struct {
 enum { STATE_MODE_LOAD, STATE_MODE_SAVE };
 static gboolean running = TRUE;
 static gboolean ready = FALSE;
-static gboolean frame_skip_enabled = TRUE;
-static int frame_counter = 0;
 
 static float brightness = 0; // TODO settings on gui
 static float contrast = 1.5;
@@ -279,20 +265,13 @@ static gpointer touch_thread_fn(gpointer data) {
 // input callbacks | gambatte thread
 static void input_poll(void){
     // fprintf(stdout, "input_poll\n");
-
-    // Clear only non-joystick buttons immediately
-    // Joystick buttons (UP, DOWN, LEFT, RIGHT) will retain previous state until next touch
-    gb_button_state[GB_A] = 0;
-    gb_button_state[GB_B] = 0;
-    gb_button_state[GB_SELECT] = 0;
-    gb_button_state[GB_START] = 0;
-
-    // Preserve previous joystick state (so that holding a direction still registers)
-    static int prev_joystick_state[4] = {0};
-    memcpy(&gb_button_state[GB_UP], prev_joystick_state, sizeof(prev_joystick_state));
+    // Clear all buttons
+    for (int i = 0; i < GB_BUTTON_COUNT; ++i)
+        gb_button_state[i] = 0;
 
     // Snapshot touch slots
     TouchSlot slots[MAX_TOUCHES];
+
     g_mutex_lock(slots_mutex);
     memcpy(slots, slots_snap, sizeof(slots));
     g_mutex_unlock(slots_mutex);
@@ -308,7 +287,7 @@ static void input_poll(void){
         for (int i = 0; i < GB_BUTTON_COUNT; ++i) {
             int x = g_atomic_int_get(&gb_button_regions[i].x); // cx
             int y = g_atomic_int_get(&gb_button_regions[i].y); // cy
-            int r = g_atomic_int_get(&gb_button_regions[i].r);
+            int r = g_atomic_int_get(&gb_button_regions[i].r);  
 
             int dx = rel_x - x;
             int dy = rel_y - y;
@@ -318,9 +297,6 @@ static void input_poll(void){
             }
         }
     }
-
-    // Save current joystick state for next frame
-    memcpy(prev_joystick_state, &gb_button_state[GB_UP], sizeof(prev_joystick_state));
 }
 
 // input state | gambatte thread
@@ -454,26 +430,24 @@ static void audio_backend_deinit(AudioBackend **pab) {
 }
 
 static size_t audio_sample_batch(const uint8_t *data, size_t frames) {
-    // disable audio for CPU savings - freeing ~15–20% CPU on Kindle
+    int64_t start = g_get_monotonic_time();  
     
-    // int64_t start = g_get_monotonic_time();  
-    
-    // if (!ab || !ab->mixer_handle || MixerGetNumBytes(ab->mixer_handle) > frames * 40 ) return frames;
+    if (!ab || !ab->mixer_handle || MixerGetNumBytes(ab->mixer_handle) > frames * 40 ) return frames;
 
-    // int r, s; uint8_t *b = MixerGetBufPlay(ab->mixer_handle, &r, &s);
-    // if (!b || r != 0 || s <= 0) return frames;
+    int r, s; uint8_t *b = MixerGetBufPlay(ab->mixer_handle, &r, &s);
+    if (!b || r != 0 || s <= 0) return frames;
     
-    // frames = frames > s/4 ? s/4 : frames;
+    frames = frames > s/4 ? s/4 : frames;
     
-    // memcpy(b + 1, data + 1, frames * 4 - 1);
+    memcpy(b + 1, data + 1, frames * 4 - 1);
     
-    // MixerReleaseBufPlay(ab->mixer_handle, frames * 4, b);
+    MixerReleaseBufPlay(ab->mixer_handle, frames * 4, b);
     
-    // int64_t elapsed = g_get_monotonic_time() - start;
+    int64_t elapsed = g_get_monotonic_time() - start;
     
-    // if ( ((double) (elapsed) / 1000.0) > 2 ){
-    //     g_print("audio slow, elapsed: %f\n", (double) (elapsed) / 1000.0);
-    // }
+    if ( ((double) (elapsed) / 1000.0) > 2 ){
+        g_print("audio slow, elapsed: %f\n", (double) (elapsed) / 1000.0);
+    }
     return frames;
 }
 
@@ -503,14 +477,7 @@ static gpointer process_frame_job(gpointer user_data) {
         return NULL;
     }
 
-    uint16_t *emulator_frame_ptr = (uint16_t *)job->data;   // Pointer to RGB565 uint16_t data emulator_frame 
-
-    // NEW Direct grayscale rendering optimization
-    for (int i = 0; i < job->width * job->height; i++) {
-        uint8_t gray = grayscale_lut[emulator_frame_ptr[i]];
-        emulator_frame_ptr[i] = (gray << 8) | gray; // store gray in 16-bit for uniform processing
-    }
-
+    const uint16_t *emulator_frame_ptr = job->data;   // Pointer to RGB565 uint16_t data emulator_frame 
     int emulator_frame_width     = job->width;          // Width of the emulator frame: 160px
     int emulator_frame_height    = job->height;         // Height of the emulator frame: 144px
     int emulator_frame_rowstride = job->pitch / sizeof(uint16_t);
@@ -533,7 +500,7 @@ static gpointer process_frame_job(gpointer user_data) {
         grayscale_frame_ptr = malloc(scaled_frame_height * scaled_frame_rowstride); // 1-channel grayscale buffer
     }
 
-    const uint8_t *dithered_frame_ptr = gray_shm_get_buffer(state->presenter); // 830Kb
+    const uint8_t *dithered_frame_ptr = gray_shm_get_buffer(&state->presenter); // 830Kb
 
     uint16_t *emu_row_ptr = emulator_frame_ptr;
     // scale frame to the final pixbuf size
@@ -625,7 +592,7 @@ static gpointer process_frame_job(gpointer user_data) {
 
     if (draw_mode == DRAW_MODE_GTK) {
 
-        gray_shm_commit_rect(state->presenter, rect_x, rect_y, rect_w, rect_h);
+        gray_shm_commit_rect(&state->presenter, rect_x, rect_y, rect_w, rect_h);
         //gray_shm_commit_rect(&state->presenter, 0, 0, w, h);
 
     } else if (draw_mode == DRAW_MODE_FBINK) {
@@ -696,16 +663,9 @@ static gpointer process_frame_job(gpointer user_data) {
 
 static gboolean should_process_frame(void) {
     static int64_t last_frame_time = 0;
+    const int FRAME_INTERVAL_US = 1000000 / 30; // 
     int64_t current_time = g_get_monotonic_time();
 
-    if (frame_skip_enabled) {
-        frame_counter++;
-        if (frame_counter % 2 != 0)
-            return FALSE; // Skip every other frame
-    }
-
-    // const int FRAME_INTERVAL_US = 1000000 / 30; // 15 fps
-    const int FRAME_INTERVAL_US = 1000000 / 60; // match Game Boy timing - 30 fps after frame skip
     if ((current_time - last_frame_time) > FRAME_INTERVAL_US) {
         last_frame_time = current_time;
         return TRUE;
@@ -1207,9 +1167,8 @@ static void init_gtk_and_window() {
     GtkBuilder *builder = gtk_builder_new();
     GError *error = NULL;
 
-    // Load UI directly from the main.ui file
-    builder = gtk_builder_new();
-    if (!gtk_builder_add_from_file(builder, "main.ui", &error)) {
+    // Load UI from the xxd-generated header
+    if (!gtk_builder_add_from_string(builder, (const gchar *)main_ui, main_ui_len, &error)) {
         g_error("Failed to load UI: %s", error->message);
         g_error_free(error);
         return;
@@ -1303,9 +1262,7 @@ int main(int argc, char *argv[]) {
     fbink_init(fbfd_refresh, &fbink_cfg_refresh);
 
     // threading
-    #if !GLIB_CHECK_VERSION(2,32,0)
     g_thread_init(NULL);
-    #endif
     gdk_threads_init();
 
     // mutexes
