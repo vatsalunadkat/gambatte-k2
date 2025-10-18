@@ -432,25 +432,29 @@ static void audio_backend_deinit(AudioBackend **pab) {
 }
 
 static size_t audio_sample_batch(const int16_t *data, size_t frames) {
-    int64_t start = g_get_monotonic_time();  
-    
-    if (!ab || !ab->mixer_handle || MixerGetNumBytes(ab->mixer_handle) > frames * 40 ) return frames;
-
-    int r, s; uint8_t *b = MixerGetBufPlay(ab->mixer_handle, &r, &s);
-    if (!b || r != 0 || s <= 0) return frames;
-    
-    frames = frames > s/4 ? s/4 : frames;
-    
-    memcpy(b + 1, data + 1, frames * 4 - 1);
-    
-    MixerReleaseBufPlay(ab->mixer_handle, frames * 4, b);
-    
-    int64_t elapsed = g_get_monotonic_time() - start;
-    
-    if ( ((double) (elapsed) / 1000.0) > 2 ){
-        g_print("audio slow, elapsed: %f\n", (double) (elapsed) / 1000.0);
-    }
+    // AUDIO DISABLED FOR PERFORMANCE - just return immediately
     return frames;
+    
+    // ORIGINAL CODE - COMMENTED OUT
+    // int64_t start = g_get_monotonic_time();  
+
+    // if (!ab || !ab->mixer_handle || MixerGetNumBytes(ab->mixer_handle) > frames * 40 ) return frames;
+
+    // int r, s; uint8_t *b = MixerGetBufPlay(ab->mixer_handle, &r, &s);
+    // if (!b || r != 0 || s <= 0) return frames;
+    
+    // frames = frames > s/4 ? s/4 : frames;
+    
+    // memcpy(b + 1, data + 1, frames * 4 - 1);
+    
+    // MixerReleaseBufPlay(ab->mixer_handle, frames * 4, b);
+    
+    // int64_t elapsed = g_get_monotonic_time() - start;
+    
+    // if ( ((double) (elapsed) / 1000.0) > 2 ){
+    //     g_print("audio slow, elapsed: %f\n", (double) (elapsed) / 1000.0);
+    // }
+    // return frames;
 }
 
 // STEP 2
@@ -892,7 +896,9 @@ void on_open(GtkButton *button, gpointer user_data) {
             video_fps         = av_info.timing.fps;
             frame_interval_us = (int) (1000000.0 / video_fps);
 
-            ab = audio_backend_init( 32760 );
+            // AUDIO DISABLED FOR PERFORMANCE
+            // ab = audio_backend_init( 32760 );
+            ab = NULL;
 
             g_print("Libretro core reports sample rate: %.2f Hz sample_rate:: %f fusec: %d \n", video_fps, audio_sample_rate, frame_interval_us );
 
