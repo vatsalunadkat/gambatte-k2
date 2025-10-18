@@ -236,6 +236,11 @@ static gpointer touch_thread_fn(gpointer data) {
                         break;
                     case ABS_MT_TRACKING_ID: {
                         slots[current_slot].active = (ev.value != -1);
+                        // Clear position when touch is released
+                        if (ev.value == -1) {
+                            slots[current_slot].x = 0;
+                            slots[current_slot].y = 0;
+                        }
                         break;
                     }
                     case ABS_MT_POSITION_X: {
@@ -267,16 +272,16 @@ static gpointer touch_thread_fn(gpointer data) {
 // input callbacks | gambatte thread
 static void input_poll(void){
     // fprintf(stdout, "input_poll\n");
-    // Clear all buttons
-    for (int i = 0; i < GB_BUTTON_COUNT; ++i)
-        gb_button_state[i] = 0;
-
-    // Snapshot touch slots
+    
+    // Snapshot touch slots FIRST
     TouchSlot slots[MAX_TOUCHES];
-
     g_mutex_lock(slots_mutex);
     memcpy(slots, slots_snap, sizeof(slots));
     g_mutex_unlock(slots_mutex);
+
+    // Clear all buttons AFTER getting touch state
+    for (int i = 0; i < GB_BUTTON_COUNT; ++i)
+        gb_button_state[i] = 0;
 
     // For each active touch, set the corresponding button
     for (int s = 0; s < MAX_TOUCHES; ++s) {
@@ -296,6 +301,7 @@ static void input_poll(void){
             // circle equation
             if (dx * dx + dy * dy <= r * r) {
                 gb_button_state[i] = 1;
+                break;  // Only allow one button per touch slot
             }
         }
     }
