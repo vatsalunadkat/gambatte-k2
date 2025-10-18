@@ -1,0 +1,198 @@
+arm-kindlehf-linux-gnueabihf-gcc -O3 -march=armv7-a -mtune=cortex-a7 -mfpu=neon -mfloat-abi=hard -mthumb -Wall -Wextra -Wno-unused-parameter -I. -pthread -include glib_fix.h -I/usr/include/gtk-2.0 -I/usr/lib/x86_64-linux-gnu/gtk-2.0/include -I/usr/include/pango-1.0 -I/usr/include/atk-1.0 -I/usr/include/cairo -I/usr/include/gdk-pixbuf-2.0 -I/usr/include/harfbuzz -I/usr/include/glib-2.0 -I/usr/lib/x86_64-linux-gnu/glib-2.0/include -I/usr/include/pixman-1 -I/usr/include/freetype2 -I/usr/include/libpng16 -idirafter /usr/include -c gambatte-k2.c -o gambatte-k2.o
+In file included from /usr/include/gtk-2.0/gtk/gtkobject.h:37,
+                 from /usr/include/gtk-2.0/gtk/gtkwidget.h:36,
+                 from /usr/include/gtk-2.0/gtk/gtkcontainer.h:35,
+                 from /usr/include/gtk-2.0/gtk/gtkbin.h:35,
+                 from /usr/include/gtk-2.0/gtk/gtkwindow.h:36,
+                 from /usr/include/gtk-2.0/gtk/gtkdialog.h:35,
+                 from /usr/include/gtk-2.0/gtk/gtkaboutdialog.h:32,
+                 from /usr/include/gtk-2.0/gtk/gtk.h:33,
+                 from gambatte-k2.c:18:
+/usr/include/gtk-2.0/gtk/gtktypeutils.h:236:1: warning: 'GTypeDebugFlags' is deprecated [-Wdeprecated-declarations]
+  236 | void            gtk_type_init   (GTypeDebugFlags    debug_flags);
+      | ^~~~
+In file included from /usr/include/glib-2.0/gobject/gobject.h:24,
+                 from /usr/include/glib-2.0/gobject/gbinding.h:29,
+                 from /usr/include/glib-2.0/glib-object.h:22,
+                 from /usr/include/glib-2.0/gio/gioenums.h:28,
+                 from /usr/include/glib-2.0/gio/giotypes.h:28,
+                 from /usr/include/glib-2.0/gio/gio.h:26,
+                 from /usr/include/gtk-2.0/gdk/gdkapplaunchcontext.h:30,
+                 from /usr/include/gtk-2.0/gdk/gdk.h:32,
+                 from /usr/include/gtk-2.0/gtk/gtk.h:32:
+/usr/include/glib-2.0/gobject/gtype.h:679:1: note: declared here
+  679 | {
+      | ^
+In file included from /usr/include/gtk-2.0/gtk/gtktoolitem.h:31,
+                 from /usr/include/gtk-2.0/gtk/gtktoolbutton.h:30,
+                 from /usr/include/gtk-2.0/gtk/gtkmenutoolbutton.h:30,
+                 from /usr/include/gtk-2.0/gtk/gtk.h:126:
+/usr/include/gtk-2.0/gtk/gtktooltips.h:73:3: warning: 'GTimeVal' is deprecated: Use 'GDateTime' instead [-Wdeprecated-declarations]
+   73 |   GTimeVal last_popdown;
+      |   ^~~~~~~~
+In file included from /usr/include/glib-2.0/glib/galloca.h:32,
+                 from /usr/include/glib-2.0/glib.h:30,
+                 from gambatte-k2.c:17:
+/usr/include/glib-2.0/glib/gtypes.h:547:8: note: declared here
+  547 | struct _GTimeVal
+      |        ^~~~~~~~~
+gambatte-k2.c: In function 'gb_controls_draw':
+gambatte-k2.c:383:56: error: 'M_PI' undeclared (first use in this function); did you mean 'G_PI'?
+  383 |             cairo_arc(cr, btn->x, btn->y, btn->r, 0, 2*M_PI);
+      |                                                        ^~~~
+      |                                                        G_PI
+gambatte-k2.c:383:56: note: each undeclared identifier is reported only once for each function it appears in
+gambatte-k2.c:363:9: warning: unused variable 'height' [-Wunused-variable]
+  363 |     int height = alloc.height;
+      |         ^~~~~~
+gambatte-k2.c: In function 'audio_sample_batch':
+gambatte-k2.c:437:72: warning: comparison of integer expressions of different signedness: 'int' and 'size_t' {aka 'unsigned int'} [-Wsign-compare]
+  437 |     if (!ab || !ab->mixer_handle || MixerGetNumBytes(ab->mixer_handle) > frames * 40 ) return frames;
+      |                                                                        ^
+gambatte-k2.c:442:21: warning: comparison of integer expressions of different signedness: 'size_t' {aka 'unsigned int'} and 'int' [-Wsign-compare]
+  442 |     frames = frames > s/4 ? s/4 : frames;
+      |                     ^
+gambatte-k2.c:442:29: warning: operand of '?:' changes signedness from 'int' to 'size_t' {aka 'unsigned int'} due to unsignedness of other operand [-Wsign-compare]
+  442 |     frames = frames > s/4 ? s/4 : frames;
+      |                             ^~~
+gambatte-k2.c: In function 'process_frame_job':
+gambatte-k2.c:505:61: error: passing argument 1 of 'gray_shm_get_buffer' from incompatible pointer type [-Wincompatible-pointer-types]
+  505 |     const uint8_t *dithered_frame_ptr = gray_shm_get_buffer(&state->presenter); // 830Kb
+      |                                                             ^~~~~~~~~~~~~~~~~
+      |                                                             |
+      |                                                             GrayShm **
+In file included from gambatte-k2.c:25:
+gray_shm.h:21:39: note: expected 'GrayShm *' but argument is of type 'GrayShm **'
+   21 | uint8_t *gray_shm_get_buffer(GrayShm *ctx);
+      |                              ~~~~~~~~~^~~
+gambatte-k2.c:507:29: warning: initialization discards 'const' qualifier from pointer target type [-Wdiscarded-qualifiers]
+  507 |     uint16_t *emu_row_ptr = emulator_frame_ptr;
+      |                             ^~~~~~~~~~~~~~~~~~
+gambatte-k2.c:546:37: warning: initialization discards 'const' qualifier from pointer target type [-Wdiscarded-qualifiers]
+  546 |             uint8_t *dithered_row = dithered_frame_ptr + ((y_scaled + sy) * scaled_frame_rowstride);
+      |                                     ^~~~~~~~~~~~~~~~~~
+gambatte-k2.c:597:30: error: passing argument 1 of 'gray_shm_commit_rect' from incompatible pointer type [-Wincompatible-pointer-types]
+  597 |         gray_shm_commit_rect(&state->presenter, rect_x, rect_y, rect_w, rect_h);
+      |                              ^~~~~~~~~~~~~~~~~
+      |                              |
+      |                              GrayShm **
+gray_shm.h:14:40: note: expected 'GrayShm *' but argument is of type 'GrayShm **'
+   14 | void     gray_shm_commit_rect(GrayShm *ctx, int x, int y, int width, int height);
+      |                               ~~~~~~~~~^~~
+gambatte-k2.c:622:31: warning: passing argument 1 of 'memcpy' discards 'const' qualifier from pointer target type [-Wdiscarded-qualifiers]
+  622 |             memcpy(region_buf + y * rect_w * scaled_frame_channels,
+      |                    ~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+In file included from gambatte-k2.c:4:
+/home/vboxuser/x-tools/arm-kindlehf-linux-gnueabihf/arm-kindlehf-linux-gnueabihf/sysroot/usr/include/string.h:46:39: note: expected 'void * restrict' but argument is of type 'const uint8_t *' {aka 'const unsigned char *'}
+   46 | extern void *memcpy (void *__restrict __dest, const void *__restrict __src,
+      |                      ~~~~~~~~~~~~~~~~~^~~~~~
+gambatte-k2.c:638:14: warning: passing argument 1 of 'free' discards 'const' qualifier from pointer target type [-Wdiscarded-qualifiers]
+  638 |         free(region_buf);
+      |              ^~~~~~~~~~
+In file included from gambatte-k2.c:3:
+/home/vboxuser/x-tools/arm-kindlehf-linux-gnueabihf/arm-kindlehf-linux-gnueabihf/sysroot/usr/include/stdlib.h:483:25: note: expected 'void *' but argument is of type 'const uint8_t *' {aka 'const unsigned char *'}
+  483 | extern void free (void *__ptr) __THROW;
+      |                   ~~~~~~^~~~~
+gambatte-k2.c:507:15: warning: unused variable 'emu_row_ptr' [-Wunused-variable]
+  507 |     uint16_t *emu_row_ptr = emulator_frame_ptr;
+      |               ^~~~~~~~~~~
+gambatte-k2.c:467:12: warning: unused variable 'elapsed' [-Wunused-variable]
+  467 |     double elapsed = (now_time.tv_sec - last_frame_time.tv_sec) +
+      |            ^~~~~~~
+gambatte-k2.c: In function 'video_refresh':
+gambatte-k2.c:715:23: warning: assignment discards 'const' qualifier from pointer target type [-Wdiscarded-qualifiers]
+  715 |             job->data = data;
+      |                       ^
+gambatte-k2.c: In function 'on_open':
+gambatte-k2.c:856:42: error: passing argument 1 of 'retro_set_audio_sample_batch' from incompatible pointer type [-Wincompatible-pointer-types]
+  856 |             retro_set_audio_sample_batch(audio_sample_batch);
+      |                                          ^~~~~~~~~~~~~~~~~~
+      |                                          |
+      |                                          size_t (*)(const uint8_t *, size_t) {aka unsigned int (*)(const unsigned char *, unsigned int)}
+In file included from gambatte-k2.c:21:
+libretro.h:7538:72: note: expected 'retro_audio_sample_batch_t' {aka 'unsigned int (*)(const short int *, unsigned int)'} but argument is of type 'size_t (*)(const uint8_t *, size_t)' {aka 'unsigned int (*)(const unsigned char *, unsigned int)'}
+ 7538 | RETRO_API void retro_set_audio_sample_batch(retro_audio_sample_batch_t cb);
+      |                                             ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~
+gambatte-k2.c:904:13: error: implicit declaration of function 'sanitize_filename' [-Wimplicit-function-declaration]
+  904 |             sanitize_filename(raw_name, internal_game_name, sizeof(internal_game_name));
+      |             ^~~~~~~~~~~~~~~~~
+gambatte-k2.c: At top level:
+gambatte-k2.c:1007:6: warning: conflicting types for 'sanitize_filename'; have 'void(const char *, char *, size_t)' {aka 'void(const char *, char *, unsigned int)'}
+ 1007 | void sanitize_filename(const char *input, char *output, size_t maxlen) {
+      |      ^~~~~~~~~~~~~~~~~
+gambatte-k2.c:904:13: note: previous implicit declaration of 'sanitize_filename' with type 'void(const char *, char *, size_t)' {aka 'void(const char *, char *, unsigned int)'}
+  904 |             sanitize_filename(raw_name, internal_game_name, sizeof(internal_game_name));
+      |             ^~~~~~~~~~~~~~~~~
+gambatte-k2.c: In function 'main':
+gambatte-k2.c:1267:5: warning: 'g_thread_init' is deprecated [-Wdeprecated-declarations]
+ 1267 |     g_thread_init(NULL);
+      |     ^~~~~~~~~~~~~
+In file included from /usr/include/glib-2.0/glib.h:111:
+/usr/include/glib-2.0/glib/deprecated/gthread.h:261:10: note: declared here
+  261 | void     g_thread_init                   (gpointer vtable);
+      |          ^~~~~~~~~~~~~
+gambatte-k2.c:1271:5: warning: 'g_mutex_new' is deprecated [-Wdeprecated-declarations]
+ 1271 |     pixbuf_mutex    = g_mutex_new();
+      |     ^~~~~~~~~~~~
+/usr/include/glib-2.0/glib/deprecated/gthread.h:273:17: note: declared here
+  273 | GMutex *        g_mutex_new             (void);
+      |                 ^~~~~~~~~~~
+gambatte-k2.c:1272:5: warning: 'g_mutex_new' is deprecated [-Wdeprecated-declarations]
+ 1272 |     slots_mutex     = g_mutex_new();
+      |     ^~~~~~~~~~~
+/usr/include/glib-2.0/glib/deprecated/gthread.h:273:17: note: declared here
+  273 | GMutex *        g_mutex_new             (void);
+      |                 ^~~~~~~~~~~
+gambatte-k2.c:1273:5: warning: 'g_mutex_new' is deprecated [-Wdeprecated-declarations]
+ 1273 |     game_loop_mutex = g_mutex_new();
+      |     ^~~~~~~~~~~~~~~
+/usr/include/glib-2.0/glib/deprecated/gthread.h:273:17: note: declared here
+  273 | GMutex *        g_mutex_new             (void);
+      |                 ^~~~~~~~~~~
+gambatte-k2.c:1284:5: warning: 'g_thread_create' is deprecated: Use 'g_thread_new' instead [-Wdeprecated-declarations]
+ 1284 |     GThread *emulator_thread = g_thread_create(emulator_thread_fn, NULL, FALSE, NULL);
+      |     ^~~~~~~
+/usr/include/glib-2.0/glib/deprecated/gthread.h:100:10: note: declared here
+  100 | GThread *g_thread_create       (GThreadFunc       func,
+      |          ^~~~~~~~~~~~~~~
+gambatte-k2.c:1285:5: warning: 'g_thread_create' is deprecated: Use 'g_thread_new' instead [-Wdeprecated-declarations]
+ 1285 |     GThread *touch_thread    = g_thread_create(touch_thread_fn, NULL, FALSE, NULL);
+      |     ^~~~~~~
+/usr/include/glib-2.0/glib/deprecated/gthread.h:100:10: note: declared here
+  100 | GThread *g_thread_create       (GThreadFunc       func,
+      |          ^~~~~~~~~~~~~~~
+gambatte-k2.c:1286:5: warning: 'g_thread_create' is deprecated: Use 'g_thread_new' instead [-Wdeprecated-declarations]
+ 1286 |     GThread *frame_thread    = g_thread_create(frame_thread_loop, NULL, FALSE, NULL);
+      |     ^~~~~~~
+/usr/include/glib-2.0/glib/deprecated/gthread.h:100:10: note: declared here
+  100 | GThread *g_thread_create       (GThreadFunc       func,
+      |          ^~~~~~~~~~~~~~~
+gambatte-k2.c:1304:5: warning: 'g_mutex_free' is deprecated [-Wdeprecated-declarations]
+ 1304 |     g_mutex_free(pixbuf_mutex);
+      |     ^~~~~~~~~~~~
+/usr/include/glib-2.0/glib/deprecated/gthread.h:275:17: note: declared here
+  275 | void            g_mutex_free            (GMutex *mutex);
+      |                 ^~~~~~~~~~~~
+gambatte-k2.c:1286:14: warning: unused variable 'frame_thread' [-Wunused-variable]
+ 1286 |     GThread *frame_thread    = g_thread_create(frame_thread_loop, NULL, FALSE, NULL);
+      |              ^~~~~~~~~~~~
+gambatte-k2.c:1285:14: warning: unused variable 'touch_thread' [-Wunused-variable]
+ 1285 |     GThread *touch_thread    = g_thread_create(touch_thread_fn, NULL, FALSE, NULL);
+      |              ^~~~~~~~~~~~
+gambatte-k2.c:1284:14: warning: unused variable 'emulator_thread' [-Wunused-variable]
+ 1284 |     GThread *emulator_thread = g_thread_create(emulator_thread_fn, NULL, FALSE, NULL);
+      |              ^~~~~~~~~~~~~~~
+gambatte-k2.c: At top level:
+gambatte-k2.c:78:15: warning: 'gc' defined but not used [-Wunused-variable]
+   78 | static GdkGC *gc = NULL;
+      |               ^~
+gambatte-k2.c:77:35: warning: 'pixbuf_dithered' defined but not used [-Wunused-variable]
+   77 | static GdkPixbuf *pixbuf = NULL, *pixbuf_dithered = NULL;
+      |                                   ^~~~~~~~~~~~~~~
+gambatte-k2.c:44:47: warning: 'options_box' defined but not used [-Wunused-variable]
+   44 | static GtkWidget *gtk_toggle, *fbink_toggle, *options_box;
+      |                                               ^~~~~~~~~~~
+gambatte-k2.c:42:28: warning: 'border_box' defined but not used [-Wunused-variable]
+   42 | static GtkWidget *window, *border_box, *drawing_area, *drawing_area_container, *joystick_area;
+      |                            ^~~~~~~~~~
+make: *** [Makefile:50: gambatte-k2.o] Error 1

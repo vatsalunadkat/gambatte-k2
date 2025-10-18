@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,6 +11,7 @@
 #include <errno.h>
 #include <poll.h>
 #include <linux/input.h>
+#include <sys/stat.h>
 #include <dlfcn.h>
 #include <arm_neon.h>
 #include <glib.h>
@@ -378,7 +380,7 @@ static gboolean gb_controls_draw(GtkWidget * widget, GdkEventExpose *event, gpoi
         if (btn->geometry == GB_BUTTON_RECT) {
             cairo_rectangle(cr, btn->x - btn->w / 2, btn->y - btn->h / 2, btn->w, btn->h);
         } else {
-            cairo_arc(cr, btn->x, btn->y, btn->r, 0, 2*M_PI);
+            cairo_arc(cr, btn->x, btn->y, btn->r, 0, 2*G_PI);
         }
         cairo_fill_preserve(cr);
 
@@ -429,7 +431,7 @@ static void audio_backend_deinit(AudioBackend **pab) {
     *pab = NULL;
 }
 
-static size_t audio_sample_batch(const uint8_t *data, size_t frames) {
+static size_t audio_sample_batch(const int16_t *data, size_t frames) {
     int64_t start = g_get_monotonic_time();  
     
     if (!ab || !ab->mixer_handle || MixerGetNumBytes(ab->mixer_handle) > frames * 40 ) return frames;
@@ -500,7 +502,7 @@ static gpointer process_frame_job(gpointer user_data) {
         grayscale_frame_ptr = malloc(scaled_frame_height * scaled_frame_rowstride); // 1-channel grayscale buffer
     }
 
-    const uint8_t *dithered_frame_ptr = gray_shm_get_buffer(&state->presenter); // 830Kb
+    const uint8_t *dithered_frame_ptr = gray_shm_get_buffer(state->presenter); // 830Kb
 
     uint16_t *emu_row_ptr = emulator_frame_ptr;
     // scale frame to the final pixbuf size
@@ -592,8 +594,8 @@ static gpointer process_frame_job(gpointer user_data) {
 
     if (draw_mode == DRAW_MODE_GTK) {
 
-        gray_shm_commit_rect(&state->presenter, rect_x, rect_y, rect_w, rect_h);
-        //gray_shm_commit_rect(&state->presenter, 0, 0, w, h);
+        gray_shm_commit_rect(state->presenter, rect_x, rect_y, rect_w, rect_h);
+        //gray_shm_commit_rect(state->presenter, 0, 0, w, h);
 
     } else if (draw_mode == DRAW_MODE_FBINK) {
 
@@ -830,6 +832,8 @@ static gpointer emulator_thread_fn(gpointer data) {
 }
 
 // TODO refactor this 
+void sanitize_filename(const char *input, char *output, size_t maxlen);
+void sanitize_filename(const char *input, char *output, size_t maxlen);
 void on_open(GtkButton *button, gpointer user_data) {
         fprintf(stderr, "on_open\n");
 
@@ -1168,7 +1172,7 @@ static void init_gtk_and_window() {
     GError *error = NULL;
 
     // Load UI from the xxd-generated header
-    if (!gtk_builder_add_from_string(builder, (const gchar *)main_ui, main_ui_len, &error)) {
+    if (!gtk_builder_add_from_string(builder, (const gchar *)main_ui_xml, strlen(main_ui_xml), &error)) {
         g_error("Failed to load UI: %s", error->message);
         g_error_free(error);
         return;
