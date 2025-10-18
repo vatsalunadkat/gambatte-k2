@@ -24,6 +24,38 @@
 #include "main_ui.h"
 #include "gray_shm.h"
 
+// Debug logging setup
+static FILE *debug_log = NULL;
+
+#define LOG_FILE "/mnt/us/extensions/gambatte-k2/gambatte-debug.log"
+
+#define DEBUG_LOG(fmt, ...) do { \
+    if (debug_log) { \
+        fprintf(debug_log, "[%s:%d] " fmt "\n", __FUNCTION__, __LINE__, ##__VA_ARGS__); \
+        fflush(debug_log); \
+    } \
+    fprintf(stderr, "[%s:%d] " fmt "\n", __FUNCTION__, __LINE__, ##__VA_ARGS__); \
+} while(0)
+
+static void init_debug_log(void) {
+    debug_log = fopen(LOG_FILE, "w");
+    if (debug_log) {
+        fprintf(debug_log, "=== Gambatte-K2 Debug Log ===\n");
+        fprintf(debug_log, "Started at: %ld\n", time(NULL));
+        fflush(debug_log);
+    } else {
+        fprintf(stderr, "WARNING: Could not open debug log at %s\n", LOG_FILE);
+    }
+}
+
+static void close_debug_log(void) {
+    if (debug_log) {
+        fprintf(debug_log, "=== Closing Debug Log ===\n");
+        fclose(debug_log);
+        debug_log = NULL;
+    }
+}
+
 void retro_init(void), retro_deinit(void);
 bool retro_load_game(const struct retro_game_info *);
 void retro_unload_game(void);
@@ -207,17 +239,25 @@ const char *detect_touch_device() {
 
 // touchscreen thread
 static gpointer touch_thread_fn(gpointer data) {
+    DEBUG_LOG("touch_thread_fn() started");
 
     struct sched_param param;
     param.sched_priority = 70;
 
     if (pthread_setschedparam(pthread_self(), SCHED_RR, &param) != 0) {
+        DEBUG_LOG("pthread_setschedparam failed: %s", strerror(errno));
         perror("pthread_setschedparam for touch_thread_fn");
     }
 
     const char *touch_path = detect_touch_device();
+    DEBUG_LOG("Touch device path: %s", touch_path);
     int fd = open(touch_path, O_RDONLY | O_NONBLOCK);
-    if (fd < 0) { perror("open"); return NULL; }
+    if (fd < 0) {
+        DEBUG_LOG("FAILED to open touch device: %s", strerror(errno));
+        perror("open"); 
+        return NULL; 
+    }
+    DEBUG_LOG("Touch device opened, fd=%d", fd);
 
     struct input_event ev;
     struct pollfd fds = { .fd = fd, .events = POLLIN };
@@ -414,13 +454,18 @@ static gboolean gb_controls_draw(GtkWidget * widget, GdkEventExpose *event, gpoi
 }
 
 static AudioBackend *audio_backend_init(const int sample_rate) {
+    DEBUG_LOG("audio_backend_init() called with sample_rate=%d", sample_rate);
+    
     AudioBackend *ab = calloc(1, sizeof(AudioBackend));
+    DEBUG_LOG("Calling MixerOpenPlay");
     ab->mixer_handle = MixerOpenPlay(sample_rate, 2, 16, "Music");
     if (!ab->mixer_handle) {
+        DEBUG_LOG("MixerOpenPlay FAILED");
         fprintf(stderr, "MixerOpenPlay failed\n");
         free(ab);
         return NULL;
     }
+    DEBUG_LOG("MixerOpenPlay succeeded, handle=%p", ab->mixer_handle);
     return ab;
 }
 
@@ -845,24 +890,30 @@ static gpointer emulator_thread_fn(gpointer data) {
 void sanitize_filename(const char *input, char *output, size_t maxlen);
 void sanitize_filename(const char *input, char *output, size_t maxlen);
 void on_open(GtkButton *button, gpointer user_data) {
+        DEBUG_LOG("on_open() called");
         fprintf(stderr, "on_open\n");
 
         g_mutex_lock(game_loop_mutex);
         
         ready = FALSE; // use mutexes color?
 
+        DEBUG_LOG("Opening file chooser");
         char *game_path = simple_file_chooser_list(GTK_WINDOW(window));
+        DEBUG_LOG("File chooser returned: %s", game_path ? game_path : "NULL");
         g_print("Selected: %s\n", game_path);
         if (game_path) {
+            DEBUG_LOG("Loading game: %s", game_path);
             g_print("game_path: %s\n", game_path);
 
             if(game.data) {
+                DEBUG_LOG("Unloading previous game");
                 retro_unload_game();
                 retro_reset();
                 retro_deinit();
                 audio_backend_deinit(&ab);
             }
 
+            DEBUG_LOG("Setting up retro callbacks");
             retro_set_environment(environment_cb);
             retro_set_video_refresh(video_refresh);
             retro_set_audio_sample_batch(audio_sample_batch);
@@ -871,29 +922,36 @@ void on_open(GtkButton *button, gpointer user_data) {
 
             fprintf(stdout, "Loaded core symbols\n");
 
+            DEBUG_LOG("Calling retro_init()");
             retro_init();
 
             g_print("game_path 2: %s\n", game_path);
  
-
+            DEBUG_LOG("Opening game file: %s", game_path);
             FILE *game_file = fopen(game_path, "rb");
             if (!game_file) {
+                DEBUG_LOG("FAILED to open game file: %s", strerror(errno));
                 fprintf(stderr, "Failed to open game file\n");
                 g_mutex_unlock(game_loop_mutex);
                 return;
             }
             fseek(game_file, 0, SEEK_END);
             game.size = ftell(game_file);
+            DEBUG_LOG("Game file size: %zu bytes", game.size);
             fseek(game_file, 0, SEEK_SET);
             game.data = malloc(game.size);
             fread((void*)game.data, 1, game.size, game_file);
             fclose(game_file);
+            DEBUG_LOG("Game file loaded into memory");
 
+            DEBUG_LOG("Calling retro_load_game()");
             if (!retro_load_game(&game)) {
+                DEBUG_LOG("retro_load_game() FAILED");
                 fprintf(stderr, "Failed to load game\n");
                 g_mutex_unlock(game_loop_mutex);
                 return;
             }
+            DEBUG_LOG("retro_load_game() succeeded");
 
             struct retro_system_av_info av_info;
             retro_get_system_av_info(&av_info);
@@ -902,10 +960,12 @@ void on_open(GtkButton *button, gpointer user_data) {
             video_fps         = av_info.timing.fps;
             frame_interval_us = (int) (1000000.0 / video_fps);
 
+            DEBUG_LOG("Audio disabled - skipping audio_backend_init");
             // AUDIO DISABLED FOR PERFORMANCE
             // ab = audio_backend_init( 32760 );
             ab = NULL;
 
+            DEBUG_LOG("FPS: %.2f, frame_interval: %d us", video_fps, frame_interval_us);
             g_print("Libretro core reports sample rate: %.2f Hz sample_rate:: %f fusec: %d \n", video_fps, audio_sample_rate, frame_interval_us );
 
             g_atomic_int_set(&refresh_screen, 10);
@@ -923,11 +983,13 @@ void on_open(GtkButton *button, gpointer user_data) {
             gtk_widget_show(save_btn);
                         
             ready = TRUE;
+            DEBUG_LOG("Game loaded successfully, ready=TRUE");
         } else if (game.data) {
             ready = TRUE;
         }
         g_mutex_unlock(game_loop_mutex);
         g_free(game_path);
+        DEBUG_LOG("on_open() completed");
 }
 
 /////
@@ -1148,7 +1210,9 @@ static void on_area_size_allocate(GtkWidget *widget, GtkAllocation *allocation, 
 }
 
 static void init_gtk_and_window() {
+    DEBUG_LOG("init_gtk_and_window() started");
 
+    DEBUG_LOG("Parsing GTK RC string");
     gtk_rc_parse_string(
         "style \"custom-button\" {\n"
         "  bg[NORMAL]      = \"#FFFFFF\"\n"
@@ -1179,16 +1243,19 @@ static void init_gtk_and_window() {
         "widget_class \"*GtkDialog\" style \"white-dialog\"\n"        
     ); 
 
+    DEBUG_LOG("Creating GTK builder");
     //       
     GtkBuilder *builder = gtk_builder_new();
     GError *error = NULL;
 
     // Load UI from the xxd-generated header
+    DEBUG_LOG("Loading UI from XML (length: %zu)", strlen(main_ui_xml));
     if (!gtk_builder_add_from_string(builder, (const gchar *)main_ui_xml, strlen(main_ui_xml), &error)) {
         g_error("Failed to load UI: %s", error->message);
         g_error_free(error);
         return;
     }
+    DEBUG_LOG("UI loaded successfully");
 
     // Connect signals
     gtk_builder_connect_signals(builder, NULL);
@@ -1259,63 +1326,98 @@ static void init_gtk_and_window() {
     gtk_widget_hide(save_btn);
 
     g_object_unref(builder);
+
+    DEBUG_LOG("init_gtk_and_window() completed");
 }
 
 // Main function
 int main(int argc, char *argv[]) {
+    init_debug_log();
+    DEBUG_LOG("main() started");
+    DEBUG_LOG("argc=%d", argc);
+    for (int i = 0; i < argc; i++) {
+        DEBUG_LOG("argv[%d]=%s", i, argv ? argv[i] : "NULL");
+    }
 
+    DEBUG_LOG("Initializing grayscale LUT");
     init_grayscale_lut(contrast, brightness);
+    DEBUG_LOG("Initializing bayer16 thresholds");
     init_bayer16_thresholds();
 
+    DEBUG_LOG("Initializing FBInk");
     fbink_cfg.wfm_mode = WFM_A2;
     fbink_cfg.dithering_mode = HWD_PASSTHROUGH;
     // fbink_cfg.is_verbose = true; 
-    fbink_init(fbfd, &fbink_cfg);
+    int ret = fbink_init(fbfd, &fbink_cfg);
+    DEBUG_LOG("fbink_init returned: %d", ret);
 
+    DEBUG_LOG("Initializing FBInk refresh");
     fbink_cfg_refresh.wfm_mode = WFM_AUTO;
     fbink_cfg_refresh.dithering_mode = HWD_PASSTHROUGH;
     fbink_cfg_refresh.is_flashing = true;
-    fbink_init(fbfd_refresh, &fbink_cfg_refresh);
+    ret = fbink_init(fbfd_refresh, &fbink_cfg_refresh);
+    DEBUG_LOG("fbink_init refresh returned: %d", ret);
 
     // threading
+    DEBUG_LOG("Initializing threads");
     g_thread_init(NULL);
     gdk_threads_init();
 
     // mutexes
+    DEBUG_LOG("Initializing mutexes");
     pixbuf_mutex    = g_mutex_new();
     slots_mutex     = g_mutex_new();
     game_loop_mutex = g_mutex_new();
 
     // queues
+    DEBUG_LOG("Initializing queues");
     frame_queue     = g_async_queue_new();
 
     // gtk
+    DEBUG_LOG("Initializing GTK");
     gtk_init(&argc, &argv);
 
+    DEBUG_LOG("Initializing GTK window");
     init_gtk_and_window();
 
+    DEBUG_LOG("Creating threads");
     // Start game loop
     GThread *emulator_thread = g_thread_create(emulator_thread_fn, NULL, FALSE, NULL);
-    GThread *touch_thread    = g_thread_create(touch_thread_fn, NULL, FALSE, NULL);    
-    GThread *frame_thread    = g_thread_create(frame_thread_loop, NULL, FALSE, NULL);    
+    DEBUG_LOG("Emulator thread created: %p", emulator_thread);
+    
+    GThread *touch_thread    = g_thread_create(touch_thread_fn, NULL, FALSE, NULL);
+    DEBUG_LOG("Touch thread created: %p", touch_thread);
+    
+    GThread *frame_thread    = g_thread_create(frame_thread_loop, NULL, FALSE, NULL);
+    DEBUG_LOG("Frame thread created: %p", frame_thread);
 
+    DEBUG_LOG("Showing window");
     gtk_widget_show_all(window);
+    
+    DEBUG_LOG("Entering GTK main loop");
     gdk_threads_enter();
 
     gtk_main();
+    
+    DEBUG_LOG("GTK main loop exited");
     gdk_threads_leave();
 
+    DEBUG_LOG("Cleaning up audio backend");
     audio_backend_deinit(&ab);
     
     // Cleanup
+    DEBUG_LOG("Cleaning up game data");
     if (game.data) {
         retro_deinit();
         free((void*)game.data);
     }
 
+    DEBUG_LOG("Cleaning up pixbuf");
     if (pixbuf) g_object_unref(pixbuf);
     if (grayscale_frame_ptr) free(grayscale_frame_ptr);
     g_mutex_free(pixbuf_mutex);
     
+    DEBUG_LOG("Exiting main()");
+    close_debug_log();
     return EXIT_SUCCESS;
 }
