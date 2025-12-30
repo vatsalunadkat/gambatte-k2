@@ -1,0 +1,33 @@
+{
+	"items": [
+		{
+			"name": "Gambatte K2",
+			"priority": 1,
+			"items": [
+				{
+					"name": "Gambatte K2",
+					"if": "\"/lib/ld-linux-armhf.so.3\" -f!",
+					"action": "./gambatte-k2-armel"
+				},
+				{
+					"name": "Gambatte K2",
+					"if": "\"/lib/ld-linux-armhf.so.3\" -f",
+					"action": "./gambatte-k2-armhf"
+				},
+				{
+					"name": "copy game shortcut to the Library",
+					"if": "\"/lib/ld-linux-armhf.so.3\" -f",
+					"action": "/bin/cp -a shortcut_* /mnt/us/documents/"
+				},
+				{
+					"name": "enable Bluetooth",
+					"action": "./bluetooth.sh enable"
+				},
+				{
+					"name": "disable Bluetooth",
+					"action": "./bluetooth.sh disable"
+				}								
+			]
+		}
+	]
+}
